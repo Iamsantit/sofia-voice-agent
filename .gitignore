@@ -1,0 +1,10 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.modal/
+node_modules/
+.next/
+dashboard/.env.local
+dashboard/node_modules/
+dashboard/.next/
