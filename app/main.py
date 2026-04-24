@@ -1,7 +1,11 @@
 import modal
-from fastapi import FastAPI
+from fastapi import Body, FastAPI, Query, Request
+
+from app import call_state
+from app.logger import Phase, clear_logs, log, read_recent
 
 modal_app = modal.App("sofia-voice-agent")
+app = modal_app  # Modal CLI looks for `app` by default
 
 image = modal.Image.debian_slim(python_version="3.11").pip_install(
     "retell-sdk>=5.0.0",
@@ -11,169 +15,1147 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install(
     "requests>=2.32.0",
     "python-dotenv>=1.0.0",
     "fastapi>=0.115.0",
+    "pyjwt>=2.8.0",
 )
 
 sofia_secret = modal.Secret.from_name("sofia-credentials")
+log_volume = modal.Volume.from_name("sofia-logs", create_if_missing=True)
 
 web_app = FastAPI(title="Sofia Voice Agent")
 
 
 @web_app.get("/health")
 def health():
-    return {"status": "ok", "agent": "sofia", "version": "0.2.0"}
+    log.info(Phase.HTTP_IN, "health.check")
+    return {"status": "ok", "agent": "sofia", "version": "0.3.0"}
+
+
+# ── Logs API ─────────────────────────────────────────────────────────────────
+
+
+@web_app.get("/logs")
+def get_logs(
+    limit: int = Query(200, ge=1, le=2000),
+    level: str | None = Query(None),
+    call_id: str | None = Query(None),
+    phase_prefix: str | None = Query(None),
+):
+    """Recent log entries, newest first. Filters optional."""
+    entries = read_recent(limit=limit, level=level, call_id=call_id, phase_prefix=phase_prefix)
+    return {"count": len(entries), "entries": entries}
+
+
+@web_app.post("/logs/clear")
+def post_logs_clear():
+    bytes_removed = clear_logs()
+    log.warn(Phase.SYSTEM, "logs.cleared", data={"bytes_removed": bytes_removed})
+    return {"status": "ok", "bytes_removed": bytes_removed}
+
+
+@web_app.get("/call-state/{call_id}")
+def get_call_state(call_id: str):
+    state = call_state.get_state(call_id)
+    if not state:
+        return {"status": "not_found", "call_id": call_id}
+    return {"status": "ok", "state": state}
+
+
+@web_app.get("/call-states")
+def get_call_states_recent(limit: int = Query(20, ge=1, le=100)):
+    return {"states": call_state.list_recent(limit=limit)}
+
+
+# ── Retell / Twilio webhooks ─────────────────────────────────────────────────
 
 
 @web_app.post("/retell-webhook")
 def retell_webhook(request: dict):
+    event_type = request.get("event", "unknown")
+    call_obj = request.get("call") if isinstance(request.get("call"), dict) else {}
+    cid = call_obj.get("call_id") or request.get("call_id") or ""
+    log.info(Phase.WEBHOOK_RETELL, f"event.{event_type}", call_id=cid, data={"keys": list(request.keys())})
+
     from app.webhooks.retell_handler import handle_retell_event
-    return handle_retell_event(request)
+    try:
+        return handle_retell_event(request)
+    except Exception as e:
+        log.exception(Phase.WEBHOOK_RETELL, "handler.exception", e, call_id=cid)
+        return {"status": "error", "message": str(e)}
 
 
 @web_app.post("/twilio-webhook")
 def twilio_webhook(request: dict):
+    log.info(Phase.WEBHOOK_TWILIO, "event.received", data={"keys": list(request.keys())})
     from app.webhooks.twilio_handler import handle_twilio_event
-    return handle_twilio_event(request)
+    try:
+        return handle_twilio_event(request)
+    except Exception as e:
+        log.exception(Phase.WEBHOOK_TWILIO, "handler.exception", e)
+        return {"status": "error", "message": str(e)}
+
+
+# ── Agent tools (called by Retell during a live call) ───────────────────────
 
 
 @web_app.post("/search-properties")
 def search_properties(request: dict):
-    from app.services.notion_service import search_properties as _search
-
-    args = request.get("args", request)
-    results = _search(
-        zona=args.get("zona"),
-        presupuesto_max=args.get("presupuesto_max"),
-        recamaras_min=args.get("recamaras_min"),
-        tipo=args.get("tipo"),
-        operacion=args.get("operacion"),
-    )
-    return {"status": "ok", "count": len(results), "properties": results}
+    log.info(Phase.HTTP_IN, "search_properties.start", data=request)
+    try:
+        from app.services.notion_service import search_properties as _search
+        args = request.get("args", request)
+        results = _search(
+            zona=args.get("zona"),
+            presupuesto_max=args.get("presupuesto_max"),
+            recamaras_min=args.get("recamaras_min"),
+            tipo=args.get("tipo"),
+            operacion=args.get("operacion"),
+        )
+        log.info(Phase.NOTION, "search_properties.ok", data={"count": len(results)})
+        return {"status": "ok", "count": len(results), "properties": results}
+    except Exception as e:
+        log.exception(Phase.NOTION, "search_properties.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
 
 
 @web_app.post("/create-lead")
 def create_lead(request: dict):
-    from app.services.notion_service import create_lead as _create
-
-    args = request.get("args", request)
-    lead = _create(
-        name=args.get("name", ""),
-        phone=args.get("phone", ""),
-        email=args.get("email", ""),
-        presupuesto=args.get("presupuesto"),
-        zona_interes=args.get("zona_interes"),
-        tipo_buscado=args.get("tipo_buscado"),
-        operacion_buscada=args.get("operacion_buscada"),
-        fuente=args.get("fuente", "Llamada entrante"),
-        notas=args.get("notas", ""),
-    )
-    return {"status": "ok", "lead": lead}
+    log.info(Phase.HTTP_IN, "create_lead.start", data=request)
+    try:
+        from app.services.notion_service import create_lead as _create
+        args = request.get("args", request)
+        lead = _create(
+            name=args.get("name", ""),
+            phone=args.get("phone", ""),
+            email=args.get("email", ""),
+            presupuesto=args.get("presupuesto"),
+            zona_interes=args.get("zona_interes"),
+            tipo_buscado=args.get("tipo_buscado"),
+            operacion_buscada=args.get("operacion_buscada"),
+            fuente=args.get("fuente", "Llamada entrante"),
+            notas=args.get("notas", ""),
+        )
+        log.info(Phase.NOTION, "create_lead.ok", data={"lead_id": lead["id"]})
+        return {"status": "ok", "lead": lead}
+    except Exception as e:
+        log.exception(Phase.NOTION, "create_lead.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
 
 
 @web_app.post("/book-visit")
 def book_visit(request: dict):
-    from app.services.calcom_service import create_booking, get_available_slots
-    from app.services.notion_service import find_lead_by_phone, update_lead
+    log.info(Phase.HTTP_IN, "book_visit.start", data=request)
+    try:
+        from app.services.calcom_service import create_booking, get_available_slots
+        from app.services.notion_service import find_lead_by_phone, update_lead
 
-    args = request.get("args", request)
-    phone = args.get("phone", "")
-    name = args.get("name", "")
-    email = args.get("email", "cliente@inmobiliaria.com")
-    event_type_id = int(args.get("event_type_id", 0))
-    preferred_date = args.get("preferred_date", "")
-    preferred_time = args.get("preferred_time", "")
+        args = request.get("args", request)
+        phone = args.get("phone", "")
+        name = args.get("name", "")
+        email = args.get("email", "cliente@inmobiliaria.com")
+        event_type_id = int(args.get("event_type_id", 0))
+        preferred_date = args.get("preferred_date", "")
+        preferred_time = args.get("preferred_time", "")
 
-    if preferred_date and preferred_time:
-        start = f"{preferred_date}T{preferred_time}:00"
-        booking = create_booking(
-            event_type_id=event_type_id,
-            start=start,
-            name=name,
-            email=email,
-        )
+        if preferred_date and preferred_time:
+            start = f"{preferred_date}T{preferred_time}:00"
+            booking = create_booking(event_type_id=event_type_id, start=start, name=name, email=email)
+            log.info(Phase.CALCOM, "booking.created", data={"start": start})
 
-        if phone:
-            lead = find_lead_by_phone(phone)
-            if lead:
-                update_lead(
-                    page_id=lead["id"],
-                    estatus="Cita agendada",
-                    siguiente_accion=f"Visita agendada: {preferred_date} {preferred_time}",
-                )
+            if phone:
+                lead = find_lead_by_phone(phone)
+                if lead:
+                    update_lead(
+                        page_id=lead["id"],
+                        estatus="Cita agendada",
+                        siguiente_accion=f"Visita agendada: {preferred_date} {preferred_time}",
+                    )
+            return {"status": "ok", "booking": booking}
 
-        return {"status": "ok", "booking": booking}
+        if preferred_date:
+            slots = get_available_slots(event_type_id=event_type_id, start_date=preferred_date, end_date=preferred_date)
+            return {"status": "ok", "available_slots": slots}
 
-    if preferred_date:
-        slots = get_available_slots(
-            event_type_id=event_type_id,
-            start_date=preferred_date,
-            end_date=preferred_date,
-        )
-        return {"status": "ok", "available_slots": slots}
-
-    return {"status": "error", "message": "Se necesita al menos preferred_date"}
+        return {"status": "error", "message": "Se necesita al menos preferred_date"}
+    except Exception as e:
+        log.exception(Phase.CALCOM, "book_visit.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
 
 
 @web_app.post("/update-lead-status")
 def update_lead_status(request: dict):
-    from app.services.notion_service import find_lead_by_phone, update_lead
+    log.info(Phase.HTTP_IN, "update_lead_status.start", data=request)
+    try:
+        from app.services.notion_service import find_lead_by_phone, update_lead
 
-    args = request.get("args", request)
-    phone = args.get("phone", "")
-    page_id = args.get("lead_id", "")
+        args = request.get("args", request)
+        phone = args.get("phone", "")
+        page_id = args.get("lead_id", "")
 
-    if not page_id and phone:
-        lead = find_lead_by_phone(phone)
-        if not lead:
-            return {"status": "error", "message": f"No se encontró lead con teléfono {phone}"}
-        page_id = lead["id"]
+        if not page_id and phone:
+            lead = find_lead_by_phone(phone)
+            if not lead:
+                log.warn(Phase.NOTION, "update_lead.not_found", data={"phone": phone})
+                return {"status": "error", "message": f"No se encontró lead con teléfono {phone}"}
+            page_id = lead["id"]
 
-    if not page_id:
-        return {"status": "error", "message": "Se necesita phone o lead_id"}
+        if not page_id:
+            return {"status": "error", "message": "Se necesita phone o lead_id"}
 
-    result = update_lead(
-        page_id=page_id,
-        estatus=args.get("estatus"),
-        temperatura=args.get("temperatura"),
-        siguiente_accion=args.get("siguiente_accion"),
-    )
-    return {"status": "ok", "result": result}
+        result = update_lead(
+            page_id=page_id,
+            estatus=args.get("estatus"),
+            temperatura=args.get("temperatura"),
+            siguiente_accion=args.get("siguiente_accion"),
+        )
+        log.info(Phase.NOTION, "update_lead.ok", data={"page_id": page_id})
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        log.exception(Phase.NOTION, "update_lead.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
 
 
 @web_app.post("/post-call-summary")
 def post_call_summary(request: dict):
-    from app.webhooks.retell_handler import process_post_call
-
     call_id = request.get("call_id", "")
-    if not call_id:
-        return {"status": "error", "message": "Se necesita call_id"}
+    log.info(Phase.HTTP_IN, "post_call_summary.start", call_id=call_id)
+    try:
+        from app.webhooks.retell_handler import process_post_call
+        if not call_id:
+            return {"status": "error", "message": "Se necesita call_id"}
+        return process_post_call(call_id)
+    except Exception as e:
+        log.exception(Phase.CALL_ANALYZED, "post_call.fail", e, call_id=call_id)
+        return {"status": "error", "message": str(e)}
 
-    return process_post_call(call_id)
+
+# ── Admin: Retell agents ────────────────────────────────────────────────────
+
+
+@web_app.get("/admin/agents")
+def admin_list_agents():
+    from app.admin.retell_mgmt import list_agents
+    try:
+        return {"status": "ok", "agents": list_agents()}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.agents.list.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.get("/admin/agents/{agent_id}")
+def admin_get_agent(agent_id: str):
+    from app.admin.retell_mgmt import get_agent, get_llm
+    try:
+        agent = get_agent(agent_id)
+        llm_id = (agent.get("response_engine") or {}).get("llm_id")
+        llm = get_llm(llm_id) if llm_id else {}
+        return {"status": "ok", "agent": agent, "llm": llm}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.agents.get.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/agents")
+def admin_create_agent(request: dict):
+    from app.admin.retell_mgmt import create_agent_simple
+    try:
+        result = create_agent_simple(
+            name=request.get("name", "Nuevo agente"),
+            model=request.get("model", "claude-4.5-sonnet"),
+            voice_id=request.get("voice_id", "cartesia-Sofia"),
+            language=request.get("language", "es-419"),
+            begin_message=request.get("begin_message", "Hola, ¿en qué puedo ayudarle?"),
+            general_prompt=request.get("general_prompt", "Eres un asistente profesional."),
+            temperature=float(request.get("temperature", 0.4)),
+            webhook_url=request.get("webhook_url"),
+            timezone=request.get("timezone", "America/Mexico_City"),
+        )
+        return {"status": "ok", **result}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.agents.create.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.patch("/admin/agents/{agent_id}")
+def admin_update_agent(agent_id: str, request: dict):
+    from app.admin.retell_mgmt import get_agent, update_agent, update_llm
+    try:
+        agent_patch = {}
+        for k in ("agent_name", "voice_id", "language", "timezone", "voice_speed",
+                  "responsiveness", "interruption_sensitivity", "webhook_url"):
+            if k in request and request[k] is not None:
+                agent_patch[k] = request[k]
+
+        llm_patch = {}
+        for k in ("begin_message", "general_prompt", "model_temperature", "model"):
+            if k in request and request[k] is not None:
+                llm_patch[k] = request[k]
+
+        result: dict = {"agent_updated": False, "llm_updated": False}
+
+        if agent_patch:
+            update_agent(agent_id, agent_patch)
+            result["agent_updated"] = True
+
+        if llm_patch:
+            agent = get_agent(agent_id)
+            llm_id = (agent.get("response_engine") or {}).get("llm_id")
+            if llm_id:
+                update_llm(llm_id, llm_patch)
+                result["llm_updated"] = True
+
+        return {"status": "ok", **result}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.agents.update.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/agents/{agent_id}")
+def admin_delete_agent(agent_id: str):
+    from app.admin.retell_mgmt import delete_agent
+    try:
+        delete_agent(agent_id)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.agents.delete.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.get("/admin/voices")
+def admin_list_voices():
+    from app.admin.retell_mgmt import list_voices
+    try:
+        return {"status": "ok", "voices": list_voices()}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.voices.list.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+# ── Admin: Phone numbers (Twilio + Retell) ──────────────────────────────────
+
+
+@web_app.get("/admin/phone-numbers")
+def admin_list_numbers():
+    from app.admin import retell_mgmt, twilio_mgmt
+    try:
+        twilio_nums = twilio_mgmt.list_numbers()
+        retell_nums = retell_mgmt.list_phone_numbers()
+        trunks = twilio_mgmt.list_trunks()
+        balance = twilio_mgmt.get_balance()
+        # Cross-reference: mark which Twilio numbers are imported in Retell
+        retell_set = {p["phone_number"] for p in retell_nums}
+        for n in twilio_nums:
+            n["imported_in_retell"] = n["phone_number"] in retell_set
+        return {
+            "status": "ok",
+            "twilio_numbers": twilio_nums,
+            "retell_numbers": retell_nums,
+            "twilio_trunks": trunks,
+            "twilio_balance": balance,
+        }
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.numbers.list.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.get("/admin/phone-numbers/available")
+def admin_search_numbers(
+    country: str = "US",
+    area_code: str | None = None,
+    contains: str | None = None,
+):
+    from app.admin.twilio_mgmt import search_available
+    try:
+        return {"status": "ok", "available": search_available(country=country, area_code=area_code, contains=contains)}
+    except Exception as e:
+        log.exception(Phase.TWILIO, "admin.numbers.search.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/phone-numbers/buy")
+def admin_buy_number(request: dict):
+    from app.admin import twilio_mgmt
+    try:
+        result = twilio_mgmt.buy_number(
+            phone_number=request["phone_number"],
+            friendly_name=request.get("friendly_name", "Sofia"),
+        )
+        # Optionally: associate to trunk if trunk_sid provided
+        if request.get("trunk_sid"):
+            twilio_mgmt.associate_number_to_trunk(request["trunk_sid"], result["sid"])
+        return {"status": "ok", **result}
+    except Exception as e:
+        log.exception(Phase.TWILIO, "admin.numbers.buy.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/phone-numbers/twilio/{sid}")
+def admin_release_number(sid: str):
+    from app.admin.twilio_mgmt import release_number
+    try:
+        release_number(sid)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.TWILIO, "admin.numbers.release.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/phone-numbers/retell/import")
+def admin_retell_import_number(request: dict):
+    from app.admin.retell_mgmt import import_phone_number
+    try:
+        result = import_phone_number(
+            phone_number=request["phone_number"],
+            termination_uri=request["termination_uri"],
+            inbound_agent_id=request.get("inbound_agent_id"),
+            outbound_agent_id=request.get("outbound_agent_id"),
+            nickname=request.get("nickname", ""),
+        )
+        return {"status": "ok", "data": result}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.retell.import.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.patch("/admin/phone-numbers/retell/{phone_number}")
+def admin_retell_update_number(phone_number: str, request: dict):
+    from app.admin.retell_mgmt import update_phone_number
+    try:
+        patch = {k: v for k, v in request.items() if v is not None and k in (
+            "inbound_agent_id", "outbound_agent_id", "nickname"
+        )}
+        if not patch:
+            return {"status": "error", "message": "Nothing to update"}
+        update_phone_number(phone_number, patch)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.retell.update_number.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/phone-numbers/retell/{phone_number}")
+def admin_retell_delete_number(phone_number: str):
+    from app.admin.retell_mgmt import delete_phone_number
+    try:
+        delete_phone_number(phone_number)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.retell.delete_number.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+# ── Auth: OTP + JWT session ────────────────────────────────────────────────
+
+
+@web_app.post("/auth/request-code")
+def auth_request_code(request: dict):
+    """Generate OTP, store it, and email it to the user."""
+    from app.auth import generate_otp, send_otp_email, store_otp
+
+    email = (request.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return {"status": "error", "message": "Email inválido"}
+
+    code = generate_otp()
+    store_otp(email, code)
+    log.info(Phase.SYSTEM, "auth.request_code", data={"email": email})
+
+    try:
+        send_otp_email(email, code)
+        return {"status": "ok", "message": "Código enviado"}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "auth.request_code.email_fail", e, data={"email": email})
+        return {"status": "error", "message": f"No se pudo enviar el correo: {str(e)[:200]}"}
+
+
+@web_app.post("/auth/verify-code")
+def auth_verify_code(request: dict):
+    """Verify OTP, issue JWT on success."""
+    from app.auth import create_session_token, verify_otp
+
+    email = (request.get("email") or "").strip().lower()
+    code = (request.get("code") or "").strip()
+
+    if not email or not code:
+        return {"status": "error", "message": "Faltan email o código"}
+
+    ok, reason = verify_otp(email, code)
+    if not ok:
+        log.warn(Phase.SYSTEM, "auth.verify_code.fail", data={"email": email, "reason": reason})
+        return {"status": "error", "message": reason}
+
+    token = create_session_token(email)
+    log.info(Phase.SYSTEM, "auth.verify_code.ok", data={"email": email})
+    return {"status": "ok", "token": token, "email": email}
+
+
+@web_app.get("/auth/me")
+def auth_me(request: Request):
+    """Return current session info. Reads token from Authorization header or cookie."""
+    from app.auth import verify_session_token
+
+    token = None
+    auth_hdr = request.headers.get("authorization", "")
+    if auth_hdr.lower().startswith("bearer "):
+        token = auth_hdr[7:].strip()
+    if not token:
+        token = request.cookies.get("sofia_session")
+
+    if not token:
+        return {"status": "anonymous"}
+
+    payload = verify_session_token(token)
+    if not payload:
+        return {"status": "anonymous"}
+
+    return {"status": "authenticated", "email": payload.get("sub")}
+
+
+# ── Onboarding / Industries ────────────────────────────────────────────────
+
+
+@web_app.get("/admin/industries")
+def admin_list_industries():
+    from app.industries import list_industries
+    return {"status": "ok", "industries": list_industries()}
+
+
+@web_app.post("/admin/generate-prompt")
+def admin_generate_prompt(request: dict):
+    """Generate a custom agent prompt from a business description using Claude.
+
+    Body: { "description": "...", "agent_name": "...", "business_name": "...", "city": "..." }
+    Returns: { "begin_message": "...", "general_prompt": "..." }
+    """
+    import os
+
+    import anthropic
+
+    description = (request.get("description") or "").strip()
+    agent_name = (request.get("agent_name") or "Sofía").strip()
+    business_name = (request.get("business_name") or "tu negocio").strip()
+    city = (request.get("city") or "tu ciudad").strip()
+
+    if len(description) < 30:
+        return {"status": "error", "message": "Describe tu negocio con más detalle (mínimo 30 caracteres)."}
+
+    log.info(Phase.SYSTEM, "generate_prompt.start", data={
+        "desc_len": len(description),
+        "agent_name": agent_name,
+        "business_name": business_name,
+    })
+
+    system_instruction = """Eres un experto en diseño de agentes de voz para atención al cliente. Tu tarea: crear el prompt de sistema de un agente virtual que contesta el teléfono de un negocio.
+
+Responderás ÚNICAMENTE con un JSON válido (sin markdown, sin backticks) con exactamente esta estructura:
+{
+  "begin_message": "La primera frase que dice el agente al contestar. Debe mencionar el nombre del negocio y del agente, y preguntar en qué puede ayudar. 1 oración.",
+  "general_prompt": "El prompt completo del agente con 4 secciones: ## Personalidad (3-4 bullets), ## Flujo (4-6 pasos numerados), ## Reglas (3-4 bullets). Entre 300 y 600 palabras. Usa markdown."
+}
+
+El agente debe hablar español mexicano/latinoamericano natural, ser breve (es llamada telefónica), y nunca inventar información del negocio."""
+
+    user_prompt = f"""Negocio: {business_name} (en {city})
+Nombre del agente: {agent_name}
+Descripción del negocio: {description}
+
+Genera el JSON del prompt del agente."""
+
+    try:
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        message = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=2000,
+            system=system_instruction,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw = message.content[0].text.strip()
+
+        # Strip markdown fences if Claude slipped any
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+
+        import json as _json
+        parsed = _json.loads(raw)
+        begin = parsed.get("begin_message", "").strip()
+        prompt = parsed.get("general_prompt", "").strip()
+
+        if not begin or not prompt:
+            raise ValueError("Respuesta de Claude sin campos requeridos")
+
+        log.info(Phase.ANTHROPIC, "generate_prompt.ok", data={
+            "begin_len": len(begin),
+            "prompt_len": len(prompt),
+        })
+        return {
+            "status": "ok",
+            "begin_message": begin,
+            "general_prompt": prompt,
+        }
+    except Exception as e:
+        log.exception(Phase.ANTHROPIC, "generate_prompt.fail", e, data=request)
+        return {"status": "error", "message": str(e)[:300]}
+
+
+def _email_from_request(request: Request) -> str | None:
+    """Extract authenticated email from Authorization bearer or cookie."""
+    from app.auth import verify_session_token
+
+    token = None
+    auth_hdr = request.headers.get("authorization", "")
+    if auth_hdr.lower().startswith("bearer "):
+        token = auth_hdr[7:].strip()
+    if not token:
+        token = request.cookies.get("sofia_session")
+    if not token:
+        return None
+    payload = verify_session_token(token)
+    return payload.get("sub") if payload else None
+
+
+@web_app.get("/admin/my-agent")
+def admin_my_agent(request: Request):
+    """Return the agent linked to the authenticated user, plus its LLM config."""
+    from app.admin.retell_mgmt import get_agent, get_llm
+    from app.user_agents import get_user_agent
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+
+    link = get_user_agent(email)
+    if not link:
+        return {"status": "no_agent", "email": email}
+
+    try:
+        agent = get_agent(link["agent_id"])
+        llm_id = (agent.get("response_engine") or {}).get("llm_id") or link.get("llm_id")
+        llm = get_llm(llm_id) if llm_id else {}
+        return {
+            "status": "ok",
+            "email": email,
+            "link": link,
+            "agent": agent,
+            "llm": llm,
+        }
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.my_agent.fail", e, data={"email": email})
+        return {"status": "error", "message": str(e), "link": link}
+
+
+@web_app.patch("/admin/my-agent/llm")
+def admin_update_my_llm(request: Request, body: dict = Body(...)):
+    """Update the authenticated user's agent LLM (begin_message, prompt, temperature)."""
+    from app.admin.retell_mgmt import update_llm
+    from app.user_agents import get_user_agent
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+
+    link = get_user_agent(email)
+    if not link:
+        return {"status": "error", "message": "No agent linked to this user"}
+
+    patch = {}
+    if "begin_message" in body:
+        patch["begin_message"] = body["begin_message"]
+    if "general_prompt" in body:
+        patch["general_prompt"] = body["general_prompt"]
+    if "model_temperature" in body:
+        patch["model_temperature"] = float(body["model_temperature"])
+
+    if not patch:
+        return {"status": "error", "message": "Nothing to update"}
+
+    try:
+        result = update_llm(link["llm_id"], patch)
+        log.info(Phase.RETELL, "admin.my_llm.updated", data={"email": email, "fields": list(patch.keys())})
+        return {"status": "ok", "llm_id": result.get("llm_id")}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.my_llm.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/generate-prompt")
+def admin_generate_prompt(request: dict):
+    """Use Claude to generate a custom agent prompt from a business description.
+
+    Body: {
+      "business_name": "...",
+      "city": "...",
+      "agent_name": "...",
+      "description": "describe your business in 2-3 sentences"
+    }
+    """
+    import os
+    from anthropic import Anthropic
+
+    business_name = (request.get("business_name") or "").strip()
+    city = (request.get("city") or "").strip()
+    agent_name = (request.get("agent_name") or "Sofía").strip()
+    description = (request.get("description") or "").strip()
+
+    if not description:
+        return {"status": "error", "message": "Falta descripción del negocio"}
+
+    log.info(Phase.ANTHROPIC, "generate_prompt.start", data={"business": business_name, "desc_len": len(description)})
+
+    system_prompt = """Eres un experto en diseñar prompts para agentes de voz con IA. Tu tarea es crear un prompt personalizado para un agente de voz que recibirá llamadas de clientes de un negocio específico.
+
+Genera un prompt en español que incluya:
+1. Identidad del agente (nombre + empresa + ciudad)
+2. Personalidad (profesional, amable, adaptada al tipo de negocio)
+3. Flujo típico de llamada (4-6 pasos claros)
+4. Reglas importantes (qué hacer/no hacer)
+
+El prompt debe:
+- Estar en segunda persona ("Eres...")
+- Ser directo y conciso (máximo 800 palabras)
+- Usar markdown con ## secciones
+- Adaptarse al tono natural del negocio descrito
+- Nunca inventar información que el agente no pueda verificar
+
+Responde ÚNICAMENTE con el texto del prompt generado. Sin comentarios previos, sin markdown code fences, sin texto adicional."""
+
+    user_msg = f"""Genera un prompt personalizado para el siguiente negocio:
+
+**Negocio:** {business_name or "(sin nombre)"}
+**Ciudad:** {city or "(no especificada)"}
+**Nombre del agente:** {agent_name}
+
+**Descripción del negocio (del dueño):**
+{description}
+
+Genera el prompt ahora."""
+
+    try:
+        client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        msg = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=2000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        generated = "".join(b.text for b in msg.content if hasattr(b, "text")).strip()
+
+        # Also generate a natural greeting
+        greeting_msg = f"""Basado en este prompt de agente, genera el mensaje de saludo inicial (2-3 líneas máximo) que el agente dirá al contestar una llamada entrante. Responde ÚNICAMENTE con el texto del saludo, sin comillas.
+
+Agente: {agent_name}
+Negocio: {business_name}
+Descripción: {description[:200]}"""
+
+        greeting_resp = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=200,
+            messages=[{"role": "user", "content": greeting_msg}],
+        )
+        greeting = "".join(b.text for b in greeting_resp.content if hasattr(b, "text")).strip().strip('"')
+
+        log.info(Phase.ANTHROPIC, "generate_prompt.ok", data={"prompt_len": len(generated)})
+        return {
+            "status": "ok",
+            "general_prompt": generated,
+            "begin_message": greeting,
+        }
+    except Exception as e:
+        log.exception(Phase.ANTHROPIC, "generate_prompt.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/generate-prompt")
+def admin_generate_prompt(request: dict):
+    """Generate an agent prompt from a free-form business description using Claude.
+
+    Body: { business_name, city, agent_name, description }
+    Returns: { status: "ok", begin_message, general_prompt }
+    """
+    import json
+    import os
+    import anthropic
+
+    business_name = (request.get("business_name") or "").strip()
+    city = (request.get("city") or "").strip()
+    agent_name = (request.get("agent_name") or "Sofía").strip()
+    description = (request.get("description") or "").strip()
+
+    if not description or len(description) < 10:
+        return {"status": "error", "message": "Describe tu negocio con al menos 10 caracteres."}
+
+    log.info(Phase.ANTHROPIC, "generate_prompt.start", data={
+        "business": business_name,
+        "desc_len": len(description),
+    })
+
+    system_instructions = """Eres un experto en diseño de agentes de voz IA para negocios.
+
+A partir de la descripción de un negocio, generas UN prompt completo para un recepcionista virtual que contesta llamadas telefónicas.
+
+El prompt que generes debe tener esta estructura:
+
+## Personalidad
+- Tono apropiado al negocio (cálido/formal/energético/etc.)
+- Uso de "tú" o "usted" según industria
+- 2-3 características clave
+
+## Flujo de llamada
+1-6 pasos numerados de qué hacer en una llamada típica.
+
+## Reglas
+- 3-5 reglas importantes para el agente (qué evitar, qué priorizar).
+
+Responde SOLO con JSON válido (sin markdown, sin backticks):
+{
+  "begin_message": "saludo corto inicial que diga el agente al contestar (máx 25 palabras)",
+  "general_prompt": "el prompt completo con las secciones arriba, en español"
+}
+
+El begin_message debe mencionar el nombre del negocio y del agente."""
+
+    user_content = f"""Negocio: {business_name}
+Ciudad: {city or "no especificada"}
+Nombre del agente: {agent_name}
+
+Descripción del negocio:
+{description}
+
+Genera el prompt del agente."""
+
+    try:
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        message = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=2000,
+            system=system_instructions,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        raw = message.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+
+        data = json.loads(raw)
+        log.info(Phase.ANTHROPIC, "generate_prompt.ok", data={
+            "begin_len": len(data.get("begin_message", "")),
+            "prompt_len": len(data.get("general_prompt", "")),
+        })
+        return {
+            "status": "ok",
+            "begin_message": data.get("begin_message", ""),
+            "general_prompt": data.get("general_prompt", ""),
+        }
+    except json.JSONDecodeError as e:
+        log.exception(Phase.ANTHROPIC, "generate_prompt.parse_fail", e)
+        return {"status": "error", "message": f"Respuesta de Claude no parseable: {str(e)[:150]}"}
+    except Exception as e:
+        log.exception(Phase.ANTHROPIC, "generate_prompt.fail", e)
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@web_app.post("/admin/onboarding")
+def admin_onboarding(request: dict):
+    """Create an agent from an industry template using user-provided data.
+
+    Expected body:
+      {
+        "industry": "dental",
+        "business_name": "Clínica Sonríe",
+        "city": "Bogotá",
+        "owner_name": "Juan",
+        "owner_email": "juan@example.com",
+        "owner_phone": "+573001234567",
+        "agent_name": "Ana",               // optional, uses template default
+        "begin_message_override": "...",   // optional
+        "general_prompt_override": "..."   // optional
+      }
+    """
+    from app.admin.retell_mgmt import create_agent_simple
+    from app.industries import get_template, render_template
+    import os
+
+    industry = request.get("industry", "otro")
+    template = get_template(industry)
+    if not template:
+        return {"status": "error", "message": f"Industria desconocida: {industry}"}
+
+    business_name = (request.get("business_name") or "").strip()
+    city = (request.get("city") or "").strip()
+    owner_name = (request.get("owner_name") or "").strip()
+    agent_name = (request.get("agent_name") or template["default_agent_name"]).strip()
+
+    if not business_name:
+        return {"status": "error", "message": "Falta business_name"}
+
+    render_data = {
+        "business_name": business_name,
+        "city": city or "tu ciudad",
+        "agent_name": agent_name,
+        "owner_name": owner_name,
+    }
+
+    begin_message = request.get("begin_message_override") or render_template(
+        template["begin_message_template"], render_data
+    )
+    general_prompt = request.get("general_prompt_override") or render_template(
+        template["general_prompt_template"], render_data
+    )
+
+    modal_base = os.environ.get("MODAL_BASE_URL", "").rstrip("/")
+    webhook_url = f"{modal_base}/retell-webhook" if modal_base else None
+
+    log.info(Phase.SYSTEM, "onboarding.start", data={
+        "industry": industry,
+        "business": business_name,
+        "agent_name": agent_name,
+    })
+
+    try:
+        result = create_agent_simple(
+            name=f"{agent_name} — {business_name}",
+            voice_id=template["voice_id"],
+            language=template["language"],
+            begin_message=begin_message,
+            general_prompt=general_prompt,
+            temperature=float(request.get("temperature", 0.4)),
+            webhook_url=webhook_url,
+        )
+
+        # Link agent to user (if email provided)
+        owner_email = (request.get("owner_email") or "").strip().lower()
+        if owner_email:
+            try:
+                from app.user_agents import link_user_to_agent
+                link_user_to_agent(
+                    email=owner_email,
+                    agent_id=result["agent_id"],
+                    llm_id=result["llm_id"],
+                    industry=industry,
+                    business_name=business_name,
+                    city=city or "",
+                    agent_name=agent_name,
+                )
+            except Exception as le:
+                log.exception(Phase.SYSTEM, "onboarding.link_user.fail", le, data={"email": owner_email})
+
+        log.info(Phase.SYSTEM, "onboarding.complete", data={
+            "agent_id": result["agent_id"],
+            "business": business_name,
+            "industry": industry,
+            "email": owner_email,
+        })
+        return {
+            "status": "ok",
+            "agent_id": result["agent_id"],
+            "llm_id": result["llm_id"],
+            "agent_name": agent_name,
+            "business_name": business_name,
+            "industry": industry,
+            "begin_message": begin_message,
+        }
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "onboarding.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.get("/diagnostics")
+def diagnostics():
+    """Run end-to-end checks against every service."""
+    from app.diagnostics import run_all
+    try:
+        return run_all()
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "diagnostics.crash", e)
+        return {"error": str(e)}
+
+
+@web_app.post("/twilio-direct-call")
+def twilio_direct_call(request: dict):
+    """Llamada de prueba usando SOLO Twilio (bypass de Retell).
+
+    Usa Twilio TTS nativo para decir un mensaje. No usa Sofia.
+    Sirve para probar que la telefonía funciona sin depender de Retell.
+    """
+    import os
+    from twilio.rest import Client
+
+    to = (request.get("phone") or "").strip()
+    message = (request.get("message") or
+               "Hola, esta es una llamada de prueba desde Sofía. "
+               "Si estás escuchando esto, la telefonía está funcionando correctamente. "
+               "Adiós.").strip()
+
+    log.info(Phase.HTTP_IN, "twilio_direct_call.start", data={"to": to, "msg_len": len(message)})
+
+    if not to:
+        return {"status": "error", "message": "Falta campo 'phone'"}
+
+    twiml = (
+        f'<Response>'
+        f'<Say voice="Polly.Lucia" language="es-MX">{message}</Say>'
+        f'<Pause length="1"/>'
+        f'<Say voice="Polly.Lucia" language="es-MX">Llamada de prueba finalizada.</Say>'
+        f'</Response>'
+    )
+
+    try:
+        log.info(Phase.CALL_TWILIO_ROUTE, "twilio.api.start", data={"to": to})
+        client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+        call = client.calls.create(
+            to=to,
+            from_=os.environ["TWILIO_PHONE_NUMBER"],
+            twiml=twiml,
+        )
+        log.info(Phase.CALL_RINGING, "twilio.call.created", data={"call_sid": call.sid, "status": call.status, "to": to})
+        return {
+            "status": "ok",
+            "call_sid": call.sid,
+            "call_status": call.status,
+            "from": os.environ["TWILIO_PHONE_NUMBER"],
+            "to": to,
+        }
+    except Exception as e:
+        log.exception(Phase.CALL_TWILIO_ROUTE, "twilio.call.fail", e, data={"to": to})
+        return {"status": "error", "stage": "twilio", "message": str(e)}
+
+
+@web_app.get("/twilio-call-status/{call_sid}")
+def twilio_call_status(call_sid: str):
+    """Get status of a Twilio call (queued/ringing/in-progress/completed/failed)."""
+    import os
+    from twilio.rest import Client
+    try:
+        client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+        call = client.calls(call_sid).fetch()
+        return {
+            "status": "ok",
+            "call_status": call.status,
+            "duration": call.duration,
+            "start_time": str(call.start_time) if call.start_time else None,
+            "end_time": str(call.end_time) if call.end_time else None,
+            "price": call.price,
+        }
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "twilio_call_status.fail", e, data={"call_sid": call_sid})
+        return {"status": "error", "message": str(e)}
 
 
 @web_app.post("/trigger-outbound")
 def trigger_outbound():
-    """Trigger manual del worker outbound (para demo/testing)."""
-    from app.outbound_worker import run_outbound_cycle
-
-    return run_outbound_cycle()
-
-
-@modal_app.function(image=image, secrets=[sofia_secret])
-@modal.asgi_app()
-def api():
-    return web_app
+    log.info(Phase.HTTP_IN, "trigger_outbound.start")
+    try:
+        from app.outbound_worker import run_outbound_cycle
+        return run_outbound_cycle()
+    except Exception as e:
+        log.exception(Phase.HTTP_IN, "trigger_outbound.fail", e)
+        return {"status": "error", "message": str(e)}
 
 
-# ── Worker outbound automático (cada hora) ───────────────────
+@web_app.post("/test-outbound-call")
+def test_outbound_call(request: dict):
+    """Llamada de prueba directa con tracking de fase completo.
+
+    Fases:
+      01 validate  — validar payload
+      02 notion_lead — crear lead en Notion
+      03 retell_dial — pedir a Retell que dispare la llamada
+      04 twilio_route — (implícito en Retell, se marca al recibir call_id)
+    Webhooks luego actualizan:
+      05 ringing, 06 answered, 07 in_progress, 08 ended, 09 analyzed
+    """
+    from app.services import notion_service, retell_service
+
+    name = (request.get("name") or "").strip()
+    phone = (request.get("phone") or "").strip()
+    interest = (request.get("interest") or "").strip()
+
+    log.info(Phase.CALL_VALIDATE, "test_call.start", data={"name": name, "phone": phone, "interest_len": len(interest)})
+
+    if not name or not phone:
+        log.warn(Phase.CALL_VALIDATE, "test_call.invalid", data={"reason": "missing name or phone"})
+        return {"status": "error", "stage": "validate", "message": "Faltan campos: name y phone son requeridos."}
+
+    # 02 — Crear lead en Notion
+    log.info(Phase.CALL_LEAD_CREATE, "notion.create_lead.start", data={"name": name, "phone": phone})
+    try:
+        lead = notion_service.create_lead(
+            name=name,
+            phone=phone,
+            fuente="Llamada saliente",
+            notas=interest or "Llamada de prueba desde dashboard",
+        )
+        log.info(Phase.CALL_LEAD_CREATE, "notion.create_lead.ok", data={"lead_id": lead["id"]})
+    except Exception as e:
+        log.exception(Phase.CALL_LEAD_CREATE, "notion.create_lead.fail", e, data={"name": name, "phone": phone})
+        return {"status": "error", "stage": "notion", "message": str(e)}
+
+    # 03 — Disparar llamada via Retell
+    log.info(Phase.CALL_RETELL_DIAL, "retell.create_phone_call.start", data={"to": phone})
+    try:
+        call = retell_service.create_outbound_call(
+            to_number=phone,
+            lead_name=name,
+            notas=interest or "Primer contacto — sin detalles previos",
+        )
+        call_id = call["call_id"]
+        log.info(Phase.CALL_RETELL_DIAL, "retell.create_phone_call.ok", call_id=call_id, data={"status": call["status"]})
+
+        # Initialize call state for dashboard polling
+        call_state.init_call(call_id, meta={"to": phone, "name": name, "lead_id": lead["id"]})
+        # Mark that Twilio routing is now in play (Retell hands it to Twilio at this point)
+        call_state.set_phase(call_id, Phase.CALL_TWILIO_ROUTE, note="Retell accepted, Twilio routing")
+        log.info(Phase.CALL_TWILIO_ROUTE, "twilio.routing.start", call_id=call_id, data={"from": "twilio", "to": phone})
+
+    except Exception as e:
+        log.exception(Phase.CALL_RETELL_DIAL, "retell.create_phone_call.fail", e, data={"to": phone, "lead_id": lead["id"]})
+        return {
+            "status": "error",
+            "stage": "retell",
+            "message": str(e),
+            "lead_id": lead["id"],
+        }
+
+    return {
+        "status": "ok",
+        "lead_id": lead["id"],
+        "call_id": call_id,
+        "call_status": call["status"],
+    }
+
+
+# ── Modal bindings ──────────────────────────────────────────────────────────
+
 
 @modal_app.function(
     image=image,
     secrets=[sofia_secret],
-    schedule=modal.Cron("0 * * * *"),  # cada hora en punto
-    timeout=600,  # 10 min max por ejecución
+    volumes={"/logs": log_volume},
+)
+@modal.asgi_app()
+def api():
+    log.info(Phase.SYSTEM, "api.boot", data={"version": "0.3.0"})
+    return web_app
+
+
+@modal_app.function(
+    image=image,
+    secrets=[sofia_secret],
+    volumes={"/logs": log_volume},
+    schedule=modal.Cron("0 * * * *"),
+    timeout=600,
 )
 def outbound_cron():
     """Cron job: revisa leads pendientes y les llama cada hora."""
     from app.outbound_worker import run_outbound_cycle
-
-    return run_outbound_cycle()
+    log.info(Phase.SYSTEM, "outbound_cron.start")
+    try:
+        result = run_outbound_cycle()
+        log.info(Phase.SYSTEM, "outbound_cron.done", data=result)
+        return result
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "outbound_cron.fail", e)
+        raise

@@ -10,7 +10,9 @@ from retell import Retell
 
 client = Retell(api_key=RETELL_API_KEY)
 
-MODAL_BASE = "https://innovandohorizontes--sofia-voice-agent-api.modal.run"
+MODAL_BASE = os.environ.get("MODAL_BASE_URL", "").rstrip("/")
+if not MODAL_BASE:
+    sys.exit("ERROR: MODAL_BASE_URL no está en .env. Despliega Modal primero: `modal deploy app/main.py` y agrega la URL al .env.")
 
 # ── Prompt del agente ────────────────────────────────────────
 

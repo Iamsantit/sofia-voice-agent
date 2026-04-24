@@ -1,5 +1,9 @@
 .env
 .env.local
+.env.backup
+.env.*.backup
+/logs/
+*.jsonl
 __pycache__/
 *.pyc
 .modal/

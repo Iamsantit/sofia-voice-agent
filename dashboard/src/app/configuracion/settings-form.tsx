@@ -7,17 +7,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { VoiceSelector } from "./voice-selector";
 
 export function SettingsForm({
   initialGreeting,
   initialPrompt,
   initialTemperature,
   model,
+  agentName = "Sofía",
+  businessName = "tu negocio",
+  industry = "",
 }: {
   initialGreeting: string;
   initialPrompt: string;
   initialTemperature: number;
   model: string;
+  agentName?: string;
+  businessName?: string;
+  industry?: string;
 }) {
   const [greeting, setGreeting] = useState(initialGreeting);
   const [prompt, setPrompt] = useState(initialPrompt);
@@ -76,9 +83,10 @@ export function SettingsForm({
             S
           </div>
           <div>
-            <p className="font-heading text-xl font-semibold italic">Sofía</p>
+            <p className="font-heading text-xl font-semibold italic">{agentName}</p>
             <p className="text-sm text-neutral-400">
-              Recepcionista virtual — Inmobiliaria Horizontes
+              Agente de voz — {businessName}
+              {industry ? ` · ${industry}` : ""}
             </p>
             <div className="flex gap-2 mt-2">
               <Badge
@@ -111,7 +119,7 @@ export function SettingsForm({
             Saludo Inicial
           </CardTitle>
           <p className="text-xs text-neutral-500">
-            Lo primero que dice Sofía al contestar una llamada
+            Lo primero que dice {agentName} al contestar una llamada
           </p>
         </CardHeader>
         <CardContent>
@@ -131,7 +139,7 @@ export function SettingsForm({
             Personalidad y Comportamiento
           </CardTitle>
           <p className="text-xs text-neutral-500">
-            Las instrucciones que definen cómo se comporta Sofía durante las
+            Las instrucciones que definen cómo se comporta {agentName} durante las
             llamadas
           </p>
         </CardHeader>
@@ -152,7 +160,7 @@ export function SettingsForm({
             Creatividad
           </CardTitle>
           <p className="text-xs text-neutral-500">
-            Qué tan creativa es Sofía en sus respuestas (0 = muy precisa, 1 =
+            Qué tan creativa es {agentName} en sus respuestas (0 = muy precisa, 1 =
             muy creativa)
           </p>
         </CardHeader>
@@ -193,6 +201,11 @@ export function SettingsForm({
           </span>
         )}
       </div>
+
+      <Separator className="bg-white/[0.06]" />
+
+      {/* Voice selector */}
+      <VoiceSelector />
 
       <Separator className="bg-white/[0.06]" />
 
