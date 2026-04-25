@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { OnboardingSuccess } from "./onboarding-success";
 
+export const dynamic = "force-dynamic";
+
 export default function OnboardingExitoPage() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">

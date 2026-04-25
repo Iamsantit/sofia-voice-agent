@@ -1,6 +1,8 @@
 import { Shell } from "@/components/shell";
 import { LogsStream } from "./logs-stream";
 
+export const dynamic = "force-dynamic";
+
 export default function LogsPage() {
   return (
     <Shell>

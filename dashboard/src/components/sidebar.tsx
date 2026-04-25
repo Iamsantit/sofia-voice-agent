@@ -11,7 +11,15 @@ const PRODUCT_INITIAL = "V"; // primera letra para el logo
 const PRODUCT_TAGLINE = "AI Voice Platform";
 // ⬆️━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ⬆️
 
-const nav = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+  section?: string;
+  soon?: boolean;
+};
+
+const nav: NavItem[] = [
   // Operación
   { section: "Operación", href: "/dashboard", label: "Inicio", icon: "✨" },
   { href: "/leads", label: "Leads", icon: "👥" },
@@ -92,7 +100,7 @@ export function Sidebar() {
       <nav className="flex-1 space-y-0.5 px-3 py-4 overflow-y-auto">
         {nav.map((item, i) => {
           const active = pathname === item.href;
-          const showSection = "section" in item && item.section;
+          const showSection = !!item.section;
           return (
             <div key={item.href}>
               {showSection && (
