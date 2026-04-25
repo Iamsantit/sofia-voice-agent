@@ -544,6 +544,204 @@ def auth_me(request: Request):
     return {"status": "authenticated", "email": payload.get("sub")}
 
 
+# ── Admin: Team ─────────────────────────────────────────────────────────────
+
+
+@web_app.get("/admin/team")
+def admin_list_team():
+    from app.admin import team
+    try:
+        return {"status": "ok", "members": team.list_members()}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.team.list.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/team")
+def admin_add_member(request: dict):
+    from app.admin import team
+    try:
+        member = team.add_member(
+            name=request.get("name", ""),
+            email=request.get("email", ""),
+            role=request.get("role", "editor"),
+            invited_by=request.get("invited_by", ""),
+        )
+        return {"status": "ok", "member": member}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.team.add.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.patch("/admin/team/{member_id}")
+def admin_update_member(member_id: str, request: dict):
+    from app.admin import team
+    try:
+        member = team.update_member(member_id, role=request.get("role"), status=request.get("status"))
+        return {"status": "ok", "member": member}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.team.update.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/team/{member_id}")
+def admin_delete_member(member_id: str):
+    from app.admin import team
+    try:
+        team.remove_member(member_id)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.team.delete.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+# ── Admin: Templates ────────────────────────────────────────────────────────
+
+
+@web_app.get("/admin/templates")
+def admin_list_templates():
+    from app.admin import templates as tpl
+    try:
+        return {"status": "ok", "templates": tpl.list_templates()}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.templates.list.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/templates")
+def admin_create_template(request: dict):
+    from app.admin import templates as tpl
+    try:
+        t = tpl.create_template(
+            name=request.get("name", ""),
+            category=request.get("category", "Otros"),
+            description=request.get("description", ""),
+            begin_message=request.get("begin_message", ""),
+            general_prompt=request.get("general_prompt", ""),
+        )
+        return {"status": "ok", "template": t}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.templates.create.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.patch("/admin/templates/{template_id}")
+def admin_update_template_endpoint(template_id: str, request: dict):
+    from app.admin import templates as tpl
+    try:
+        t = tpl.update_template(template_id, request)
+        return {"status": "ok", "template": t}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.templates.update.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/templates/{template_id}")
+def admin_delete_template(template_id: str):
+    from app.admin import templates as tpl
+    try:
+        tpl.delete_template(template_id)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.templates.delete.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/templates/{template_id}/apply")
+def admin_apply_template(template_id: str, request: dict):
+    """Apply a template to an agent (updates its LLM begin_message + prompt)."""
+    from app.admin import templates as tpl
+    from app.admin.retell_mgmt import get_agent, update_llm
+
+    agent_id = (request.get("agent_id") or "").strip()
+    if not agent_id:
+        return {"status": "error", "message": "agent_id requerido"}
+
+    t = tpl.get_template(template_id)
+    if not t:
+        return {"status": "error", "message": "Plantilla no encontrada"}
+
+    try:
+        agent = get_agent(agent_id)
+        llm_id = (agent.get("response_engine") or {}).get("llm_id")
+        if not llm_id:
+            return {"status": "error", "message": "Agente no tiene LLM asociado"}
+        patch: dict = {}
+        if t.get("begin_message"):
+            patch["begin_message"] = t["begin_message"]
+        if t.get("general_prompt"):
+            patch["general_prompt"] = t["general_prompt"]
+        update_llm(llm_id, patch)
+        tpl.increment_usage(template_id)
+        return {"status": "ok", "applied_to": agent_id}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.templates.apply.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+# ── Admin: Integrations + Webhooks ──────────────────────────────────────────
+
+
+@web_app.get("/admin/integrations")
+def admin_list_integrations():
+    from app.admin.integrations import INTEGRATIONS_CATALOG, list_webhooks
+    return {
+        "status": "ok",
+        "catalog": INTEGRATIONS_CATALOG,
+        "webhooks": list_webhooks(),
+    }
+
+
+@web_app.post("/admin/webhooks")
+def admin_create_webhook(request: dict):
+    from app.admin import integrations as ints
+    try:
+        w = ints.create_webhook(
+            name=request.get("name", "Webhook"),
+            url=request.get("url", ""),
+            events=request.get("events", []),
+            integration=request.get("integration", "custom"),
+            enabled=bool(request.get("enabled", True)),
+        )
+        return {"status": "ok", "webhook": w}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.webhooks.create.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.patch("/admin/webhooks/{webhook_id}")
+def admin_update_webhook(webhook_id: str, request: dict):
+    from app.admin import integrations as ints
+    try:
+        w = ints.update_webhook(webhook_id, request)
+        return {"status": "ok", "webhook": w}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.webhooks.update.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/webhooks/{webhook_id}")
+def admin_delete_webhook(webhook_id: str):
+    from app.admin import integrations as ints
+    try:
+        ints.delete_webhook(webhook_id)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.webhooks.delete.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/webhooks/{webhook_id}/test")
+def admin_test_webhook(webhook_id: str):
+    from app.admin import integrations as ints
+    try:
+        result = ints.test_webhook(webhook_id)
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.webhooks.test.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
 # ── Onboarding / Industries ────────────────────────────────────────────────
 
 
