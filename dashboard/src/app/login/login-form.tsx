@@ -15,7 +15,11 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [sandboxNotice, setSandboxNotice] = useState<string | null>(null);
+
+  // Sandbox dev mode
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [showEmailError, setShowEmailError] = useState(false);
+  const [emailErrorDetail, setEmailErrorDetail] = useState<string | null>(null);
 
   const codeInputs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -38,12 +42,12 @@ export function LoginForm() {
       if (data.status === "ok") {
         setStep("code");
         setResendCooldown(45);
-        if (data.sandbox_redirect && data.sent_to) {
-          setSandboxNotice(
-            `Modo sandbox: el código fue enviado a ${data.sent_to} en lugar del email que escribiste. Esto pasa porque la cuenta Resend aún no tiene un dominio verificado.`
-          );
+        if (data.dev_code) {
+          setDevCode(String(data.dev_code));
+          setEmailErrorDetail(data.delivery_error ?? null);
         } else {
-          setSandboxNotice(null);
+          setDevCode(null);
+          setEmailErrorDetail(null);
         }
         setTimeout(() => codeInputs.current[0]?.focus(), 100);
       } else {
@@ -92,15 +96,12 @@ export function LoginForm() {
     setCode(next);
     if (clean && i < 5) codeInputs.current[i + 1]?.focus();
     if (next.every((c) => c.length === 1) && i === 5) {
-      // Auto-submit when last digit typed
       setTimeout(verifyCode, 100);
     }
   }
 
   function handleCodeKey(i: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Backspace" && !code[i] && i > 0) {
-      codeInputs.current[i - 1]?.focus();
-    }
+    if (e.key === "Backspace" && !code[i] && i > 0) codeInputs.current[i - 1]?.focus();
     if (e.key === "Enter") verifyCode();
   }
 
@@ -180,18 +181,43 @@ export function LoginForm() {
     <div className="space-y-6">
       <div className="text-center space-y-2">
         <h1 className="font-heading text-3xl font-bold italic tracking-tight">
-          Revisa tu correo
+          Verifica tu email
         </h1>
         <p className="text-sm text-neutral-400">
           Enviamos un código de 6 dígitos a{" "}
-          <span className="text-neutral-200 font-mono">{email}</span>
+          <span className="text-neutral-200 font-mono">{email}</span>. Revísalo
+          (incluye spam) e ingrésalo aquí.
         </p>
       </div>
 
-      {sandboxNotice && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
-          <p className="font-medium mb-1">⚠️ Modo sandbox</p>
-          <p>{sandboxNotice}</p>
+      {/* Caja amarilla: código directo cuando estamos en sandbox de Resend */}
+      {devCode && (
+        <div className="rounded-xl border-2 border-amber-500/40 bg-amber-500/[0.05] p-4 space-y-3">
+          <p className="text-[11px] uppercase tracking-wider text-amber-300 font-semibold flex items-center gap-2">
+            ⚠️ Código de acceso directo
+          </p>
+          <p className="text-xs text-neutral-300">
+            Copia este código y pégalo abajo:
+          </p>
+          <div className="bg-white rounded-lg p-4 text-center">
+            <p className="font-mono text-3xl font-bold tracking-[0.4em] text-neutral-900 select-all">
+              {devCode}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowEmailError(!showEmailError)}
+            className="text-[11px] text-amber-400/80 hover:text-amber-300 transition flex items-center gap-1"
+          >
+            <span>{showEmailError ? "▼" : "▶"}</span>
+            Ver error del email
+          </button>
+          {showEmailError && (
+            <pre className="text-[10px] text-amber-200/70 bg-black/30 p-2 rounded whitespace-pre-wrap break-all">
+              {emailErrorDetail ??
+                "Modo sandbox de Resend: solo se pueden enviar correos al dueño de la cuenta. Para enviar a cualquier email, verifica un dominio en resend.com/domains."}
+            </pre>
+          )}
         </div>
       )}
 
@@ -246,6 +272,7 @@ export function LoginForm() {
               setStep("email");
               setCode(["", "", "", "", "", ""]);
               setError(null);
+              setDevCode(null);
             }}
             className="text-neutral-400 hover:text-neutral-200"
           >
