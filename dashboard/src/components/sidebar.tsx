@@ -24,9 +24,9 @@ const nav = [
   { href: "/configuracion", label: "Personalidad", icon: "💬" },
 
   // Avanzado
-  { section: "Avanzado", href: "/equipo", label: "Equipo", icon: "👨‍👩‍👧", soon: true },
-  { href: "/plantillas", label: "Plantillas", icon: "📚", soon: true },
-  { href: "/integraciones", label: "Integraciones", icon: "🔌", soon: true },
+  { section: "Avanzado", href: "/equipo", label: "Equipo", icon: "👨‍👩‍👧" },
+  { href: "/plantillas", label: "Plantillas", icon: "📚" },
+  { href: "/integraciones", label: "Integraciones", icon: "🔌" },
   { href: "/logs", label: "Logs", icon: "📝" },
   { href: "/diagnostics", label: "Diagnóstico", icon: "🩺" },
 ];
