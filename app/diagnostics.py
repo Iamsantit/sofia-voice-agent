@@ -202,22 +202,26 @@ def _check_anthropic() -> dict:
 
 
 def _check_calcom() -> dict:
-    r = requests.get(
-        "https://api.cal.com/v2/event-types",
-        headers={
-            "Authorization": f"Bearer {os.environ['CAL_API_KEY']}",
-            "cal-api-version": "2024-06-14",
-        },
-        timeout=10,
-    )
-    if r.status_code in (200, 201):
-        j = r.json()
-        types = j.get("data", j.get("event_types", []))
-        return {"event_types_count": len(types) if isinstance(types, list) else 0}
-    # Fallback to v1
+    # Cal.com a veces tarda 10-15s, damos margen
+    try:
+        r = requests.get(
+            "https://api.cal.com/v2/event-types",
+            headers={
+                "Authorization": f"Bearer {os.environ['CAL_API_KEY']}",
+                "cal-api-version": "2024-06-14",
+            },
+            timeout=20,
+        )
+        if r.status_code in (200, 201):
+            j = r.json()
+            types = j.get("data", j.get("event_types", []))
+            return {"event_types_count": len(types) if isinstance(types, list) else 0}
+    except requests.Timeout:
+        pass  # fallback a v1
+
     r = requests.get(
         f"https://api.cal.com/v1/event-types?apiKey={os.environ['CAL_API_KEY']}",
-        timeout=10,
+        timeout=20,
     )
     r.raise_for_status()
     return {"api_version": "v1", "event_types_count": len(r.json().get("event_types", []))}

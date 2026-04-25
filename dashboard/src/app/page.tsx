@@ -51,15 +51,15 @@ export default function LandingPage() {
       <header className="border-b border-white/[0.06]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-lg font-bold text-black">
-              S
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 via-amber-400 to-cyan-400 text-lg font-bold text-black shadow-lg shadow-fuchsia-500/20">
+              V
             </div>
             <div>
-              <p className="font-heading text-lg font-semibold italic tracking-tight">
-                Sofía
+              <p className="font-heading text-lg font-semibold italic tracking-tight bg-gradient-to-r from-fuchsia-300 via-amber-300 to-cyan-300 bg-clip-text text-transparent">
+                Voicely
               </p>
               <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-500">
-                Voice Agent
+                AI Voice Platform
               </p>
             </div>
           </div>
@@ -71,10 +71,10 @@ export default function LandingPage() {
               Industrias
             </a>
             <Link
-              href="/dashboard"
+              href="/login"
               className="text-neutral-400 hover:text-neutral-100"
             >
-              Ya tengo cuenta
+              Iniciar sesión
             </Link>
             <Link
               href="/registro"
@@ -208,7 +208,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-white/[0.06]">
         <div className="max-w-7xl mx-auto px-6 py-8 text-xs text-neutral-500 flex flex-wrap items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} Sofía Voice Agent</p>
+          <p>© {new Date().getFullYear()} Voicely</p>
           <p>Powered by Retell · Claude · Twilio</p>
         </div>
       </footer>

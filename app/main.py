@@ -330,6 +330,40 @@ def admin_list_voices():
         return {"status": "error", "message": str(e)}
 
 
+@web_app.post("/admin/voices/clone")
+def admin_clone_voice(request: dict):
+    """Create a custom (cloned) voice from a sample audio URL.
+
+    Body: { "voice_name": "Mi voz", "audio_url": "https://...wav" }
+    """
+    from app.admin.retell_mgmt import create_custom_voice
+    voice_name = (request.get("voice_name") or "").strip()
+    audio_url = (request.get("audio_url") or "").strip()
+    audio_format = (request.get("audio_format") or "wav").strip()
+
+    if not voice_name or not audio_url:
+        return {"status": "error", "message": "Falta voice_name o audio_url"}
+
+    try:
+        result = create_custom_voice(voice_name, audio_url, audio_format)
+        log.info(Phase.RETELL, "admin.voices.clone.ok", data={"voice_name": voice_name})
+        return {"status": "ok", "voice": result}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.voices.clone.fail", e, data=request)
+        return {"status": "error", "message": str(e)[:300]}
+
+
+@web_app.delete("/admin/voices/{voice_id}")
+def admin_delete_voice(voice_id: str):
+    from app.admin.retell_mgmt import delete_voice
+    try:
+        delete_voice(voice_id)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.RETELL, "admin.voices.delete.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
 # ── Admin: Phone numbers (Twilio + Retell) ──────────────────────────────────
 
 

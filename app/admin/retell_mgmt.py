@@ -212,6 +212,29 @@ def list_voices() -> list[dict]:
             "gender": v.get("gender"),
             "accent": v.get("accent"),
             "preview_audio_url": v.get("preview_audio_url"),
+            "is_custom": v.get("voice_type") == "custom",
         }
         for v in data
     ]
+
+
+def create_custom_voice(voice_name: str, audio_url: str, audio_format: str = "wav") -> dict:
+    """Create a custom voice (clone) from an audio sample.
+
+    Retell expects an audio_url accessible from their backend.
+    Audio: 30s-3min, single speaker, clean, mono preferred.
+    """
+    code, data = _req("POST", "/create-voice", {
+        "voice_name": voice_name,
+        "audio_url": audio_url,
+        "audio_format": audio_format,
+    })
+    if code not in (200, 201):
+        raise RuntimeError(f"create_voice HTTP {code}: {data}")
+    return data
+
+
+def delete_voice(voice_id: str) -> None:
+    code, _ = _req("DELETE", f"/delete-voice/{voice_id}")
+    if code not in (200, 204):
+        raise RuntimeError(f"delete_voice HTTP {code}")
