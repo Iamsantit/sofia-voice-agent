@@ -96,6 +96,7 @@ export function RegistroWizard() {
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpSandboxNotice, setOtpSandboxNotice] = useState<string | null>(null);
   const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -117,6 +118,13 @@ export function RegistroWizard() {
       if (result.status === "ok") {
         setOtpRequested(true);
         setOtpResendCooldown(45);
+        if (result.sandbox_redirect && result.sent_to) {
+          setOtpSandboxNotice(
+            `Modo sandbox: el código fue enviado a ${result.sent_to} en lugar de ${data.owner_email}. Verifica un dominio en resend.com/domains para enviar a cualquier email.`
+          );
+        } else {
+          setOtpSandboxNotice(null);
+        }
         setTimeout(() => otpInputs.current[0]?.focus(), 100);
       } else {
         setError(result.message ?? "No se pudo enviar el código");
@@ -461,6 +469,13 @@ export function RegistroWizard() {
               . Revísalo (incluye spam) e ingrésalo aquí.
             </p>
           </div>
+
+          {otpSandboxNotice && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
+              <p className="font-medium mb-1">⚠️ Modo sandbox de Resend</p>
+              <p>{otpSandboxNotice}</p>
+            </div>
+          )}
 
           {!otpRequested && loading ? (
             <p className="text-sm text-neutral-500 text-center py-8">Enviando código…</p>

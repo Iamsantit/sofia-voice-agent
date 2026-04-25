@@ -494,8 +494,16 @@ def auth_request_code(request: dict):
     log.info(Phase.SYSTEM, "auth.request_code", data={"email": email})
 
     try:
-        send_otp_email(email, code)
-        return {"status": "ok", "message": "Código enviado"}
+        delivery = send_otp_email(email, code)
+        msg = "Código enviado"
+        if delivery.get("sandbox_redirect"):
+            msg = f"Código enviado a {delivery['sent_to']} (modo sandbox)"
+        return {
+            "status": "ok",
+            "message": msg,
+            "sent_to": delivery.get("sent_to"),
+            "sandbox_redirect": delivery.get("sandbox_redirect", False),
+        }
     except Exception as e:
         log.exception(Phase.SYSTEM, "auth.request_code.email_fail", e, data={"email": email})
         return {"status": "error", "message": f"No se pudo enviar el correo: {str(e)[:200]}"}

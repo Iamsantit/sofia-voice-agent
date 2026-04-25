@@ -69,44 +69,100 @@ def verify_otp(email: str, code: str) -> tuple[bool, str]:
     return True, ""
 
 
-def send_otp_email(email: str, code: str) -> None:
+def _resend_post(payload: dict) -> requests.Response:
     api_key = os.environ["RESEND_API_KEY"]
-    from_addr = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
-
-    r = requests.post(
+    return requests.post(
         "https://api.resend.com/emails",
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        json={
-            "from": f"Sofía <{from_addr}>",
-            "to": [email],
-            "subject": f"Tu código de Sofía: {code}",
-            "html": _render_otp_html(code),
-        },
+        json=payload,
         timeout=15,
     )
-    if not r.ok:
-        log.error(
+
+
+def send_otp_email(email: str, code: str) -> dict:
+    """Send OTP email. Returns metadata about delivery.
+
+    Behavior:
+      - Try to send to `email` directly.
+      - If Resend returns 403 sandbox restriction AND RESEND_OWNER_EMAIL is set,
+        retry sending to the owner with a subject that indicates the recipient.
+        This unblocks development before a custom domain is verified.
+      - Returns: {"sent_to": str, "sandbox_redirect": bool}
+    """
+    from_addr = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+    owner_email = os.environ.get("RESEND_OWNER_EMAIL", "").strip()
+
+    primary_payload = {
+        "from": f"Sofía <{from_addr}>",
+        "to": [email],
+        "subject": f"Tu código de Sofía: {code}",
+        "html": _render_otp_html(code, recipient=email),
+    }
+
+    r = _resend_post(primary_payload)
+    if r.ok:
+        log.info(Phase.SYSTEM, "auth.email.sent", data={"email": email})
+        return {"sent_to": email, "sandbox_redirect": False}
+
+    # Detect Resend sandbox 403 and redirect to owner if configured
+    is_sandbox_err = (
+        r.status_code == 403
+        and "testing emails to your own" in r.text.lower()
+    )
+
+    if is_sandbox_err and owner_email and owner_email != email:
+        log.warn(
             Phase.SYSTEM,
-            "auth.email.send_fail",
-            data={"email": email, "status": r.status_code, "body": r.text[:300]},
-            message=f"Resend HTTP {r.status_code}",
+            "auth.email.sandbox_redirect",
+            data={"requested_for": email, "redirected_to": owner_email},
         )
-        raise RuntimeError(f"No se pudo enviar el email (HTTP {r.status_code}): {r.text[:200]}")
-    log.info(Phase.SYSTEM, "auth.email.sent", data={"email": email})
+        retry_payload = {
+            "from": f"Sofía <{from_addr}>",
+            "to": [owner_email],
+            "subject": f"[Sandbox] Código para {email}: {code}",
+            "html": _render_otp_html(code, recipient=email, sandbox_for=email),
+        }
+        r2 = _resend_post(retry_payload)
+        if r2.ok:
+            log.info(
+                Phase.SYSTEM,
+                "auth.email.sent_to_owner",
+                data={"intended_for": email, "owner": owner_email},
+            )
+            return {"sent_to": owner_email, "sandbox_redirect": True}
+
+    # Either not a sandbox issue, or retry also failed
+    log.error(
+        Phase.SYSTEM,
+        "auth.email.send_fail",
+        data={"email": email, "status": r.status_code, "body": r.text[:300]},
+        message=f"Resend HTTP {r.status_code}",
+    )
+    raise RuntimeError(f"No se pudo enviar el email (HTTP {r.status_code}): {r.text[:200]}")
 
 
-def _render_otp_html(code: str) -> str:
+def _render_otp_html(code: str, recipient: str = "", sandbox_for: str = "") -> str:
+    sandbox_banner = ""
+    if sandbox_for:
+        sandbox_banner = f"""
+    <div style="background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.4);border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:#fbbf24;">
+      ⚠️ <strong>Modo sandbox de Resend.</strong> Este código es para iniciar sesión como
+      <strong>{sandbox_for}</strong>. Para que cada usuario reciba su propio código directamente,
+      verifica un dominio en resend.com/domains.
+    </div>"""
+
     return f"""<!doctype html>
 <html>
 <body style="margin:0;padding:40px 20px;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:480px;margin:0 auto;background:#111;border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:40px;color:#e5e5e5;">
     <div style="text-align:center;margin-bottom:32px;">
-      <div style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#fbbf24,#f97316);color:#000;font-weight:700;font-size:20px;">S</div>
-      <h1 style="margin:16px 0 0;font-size:24px;font-weight:600;font-style:italic;">Sofía</h1>
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#ec4899,#fbbf24,#22d3ee);color:#000;font-weight:700;font-size:20px;">V</div>
+      <h1 style="margin:16px 0 0;font-size:24px;font-weight:600;font-style:italic;">Voicely</h1>
     </div>
+    {sandbox_banner}
     <p style="font-size:16px;margin:0 0 16px;color:#a3a3a3;">Tu código de acceso:</p>
     <div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);border-radius:12px;padding:24px;text-align:center;margin:24px 0;">
       <div style="font-family:'SF Mono',Menlo,monospace;font-size:40px;font-weight:700;letter-spacing:8px;color:#fbbf24;">{code}</div>

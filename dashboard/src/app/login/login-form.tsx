@@ -15,6 +15,7 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [sandboxNotice, setSandboxNotice] = useState<string | null>(null);
 
   const codeInputs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -37,6 +38,13 @@ export function LoginForm() {
       if (data.status === "ok") {
         setStep("code");
         setResendCooldown(45);
+        if (data.sandbox_redirect && data.sent_to) {
+          setSandboxNotice(
+            `Modo sandbox: el código fue enviado a ${data.sent_to} en lugar del email que escribiste. Esto pasa porque la cuenta Resend aún no tiene un dominio verificado.`
+          );
+        } else {
+          setSandboxNotice(null);
+        }
         setTimeout(() => codeInputs.current[0]?.focus(), 100);
       } else {
         setError(data.message ?? "No se pudo enviar el código");
@@ -179,6 +187,13 @@ export function LoginForm() {
           <span className="text-neutral-200 font-mono">{email}</span>
         </p>
       </div>
+
+      {sandboxNotice && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
+          <p className="font-medium mb-1">⚠️ Modo sandbox</p>
+          <p>{sandboxNotice}</p>
+        </div>
+      )}
 
       <div className="space-y-4">
         <div className="flex gap-2 justify-center">
