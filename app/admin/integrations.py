@@ -168,18 +168,9 @@ INTEGRATIONS_CATALOG = [
         "name": "WhatsApp Business",
         "icon": "📱",
         "category": "Mensajería",
-        "description": "Manda mensajes via Twilio WhatsApp Sandbox (cuenta ya conectada).",
+        "description": "Pega tu número y recibe alertas de Voicely en WhatsApp.",
         "status": "available",
-        "setup_kind": "webhook",
-        "setup_url": "https://www.twilio.com/docs/whatsapp/sandbox",
-        "setup_steps": [
-            "Tu cuenta Twilio ya está configurada para WhatsApp Sandbox",
-            "Ve a Twilio Console → Messaging → Try it out → WhatsApp Sandbox",
-            "Sigue 1 paso: envía 'join <código>' al +1 415 523 8886 desde tu WhatsApp",
-            "Copia la URL del Sandbox y pégala abajo",
-            "Sofia mandará un WhatsApp después de cada llamada Hot",
-        ],
-        "default_events": ["lead.hot", "appointment.scheduled"],
+        "setup_kind": "native",
     },
 ]
 

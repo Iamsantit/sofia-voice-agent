@@ -730,6 +730,60 @@ def admin_apply_template(template_id: str, request: dict):
         return {"status": "error", "message": str(e)}
 
 
+# ── Admin: WhatsApp (Twilio Sandbox passthrough) ────────────────────────────
+
+
+@web_app.get("/admin/whatsapp")
+def admin_whatsapp_state():
+    from app.admin import whatsapp as wa
+    try:
+        return {
+            "status": "ok",
+            "sandbox": wa.get_sandbox_info(),
+            "subscribers": wa.list_subscribers(),
+        }
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.whatsapp.list.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/whatsapp/connect")
+def admin_whatsapp_connect(request: dict):
+    from app.admin import whatsapp as wa
+    phone = (request.get("phone_number") or "").strip()
+    label = (request.get("label") or "").strip()
+    if not phone:
+        return {"status": "error", "message": "Falta phone_number"}
+    try:
+        sub = wa.add_subscriber(phone, label)
+        return {"status": "ok", "subscriber": sub, "sandbox": wa.get_sandbox_info()}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.whatsapp.connect.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/whatsapp/{sub_id}/retry")
+def admin_whatsapp_retry(sub_id: str):
+    from app.admin import whatsapp as wa
+    try:
+        sub = wa.retry_subscriber(sub_id)
+        return {"status": "ok", "subscriber": sub}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.whatsapp.retry.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/whatsapp/{sub_id}")
+def admin_whatsapp_remove(sub_id: str):
+    from app.admin import whatsapp as wa
+    try:
+        wa.remove_subscriber(sub_id)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "admin.whatsapp.remove.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
 # ── Admin: Integrations + Webhooks ──────────────────────────────────────────
 
 

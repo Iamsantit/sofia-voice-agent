@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { WhatsAppPanel } from "./whatsapp-panel";
 
 type Integration = {
   key: string;
@@ -18,7 +19,7 @@ type Integration = {
   category: string;
   description: string;
   status: "available" | "soon";
-  setup_kind: "webhook" | "oauth";
+  setup_kind: "webhook" | "oauth" | "native";
   setup_url?: string;
   setup_steps?: string[];
   default_events?: string[];
@@ -53,6 +54,7 @@ export function IntegracionesView() {
   const [loading, setLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [presetIntegration, setPresetIntegration] = useState("custom");
   const [presetSetupSteps, setPresetSetupSteps] = useState<string[] | undefined>();
   const [presetSetupUrl, setPresetSetupUrl] = useState<string | undefined>();
@@ -84,6 +86,13 @@ export function IntegracionesView() {
   function startConnect(integration: Integration) {
     if (integration.status === "soon") {
       alert(`${integration.name} estará disponible próximamente.`);
+      return;
+    }
+    // WhatsApp uses a dedicated native panel (not the generic webhook form)
+    if (integration.key === "whatsapp" || integration.setup_kind === "native") {
+      setShowWhatsApp(true);
+      setShowForm(false);
+      setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 100);
       return;
     }
     setPresetIntegration(integration.key);
@@ -190,6 +199,9 @@ export function IntegracionesView() {
 
   return (
     <div className="space-y-6">
+      {/* WhatsApp dedicated panel */}
+      {showWhatsApp && <WhatsAppPanel onClose={() => setShowWhatsApp(false)} />}
+
       {/* Webhook form (shown when adding new) */}
       {showForm && (
         <Card className="border-amber-500/20 bg-amber-500/[0.02]">
