@@ -6,9 +6,8 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // ⬇️ Cambia aquí el nombre del producto cuando quieras ⬇️
-const PRODUCT_NAME = "Voicely";
-const PRODUCT_INITIAL = "V"; // primera letra para el logo
-const PRODUCT_TAGLINE = "AI Voice Platform";
+const PRODUCT_NAME = "SofiaAI";
+const PRODUCT_INITIAL = "S";
 // ⬆️━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ⬆️
 
 type NavItem = {
@@ -21,22 +20,24 @@ type NavItem = {
 
 const nav: NavItem[] = [
   // Operación
-  { section: "Operación", href: "/dashboard", label: "Inicio", icon: "✨" },
-  { href: "/leads", label: "Leads", icon: "👥" },
+  { href: "/dashboard", label: "Overview", icon: "📊" },
+  { href: "/agentes", label: "Agentes", icon: "🤖" },
+  { href: "/numeros", label: "Números", icon: "#" },
   { href: "/llamadas", label: "Llamadas", icon: "📞" },
-  { href: "/llamada-prueba", label: "Llamada Prueba", icon: "🎯" },
-
-  // Configuración
-  { section: "Mi agente", href: "/voces", label: "Voces", icon: "🎙️" },
-  { href: "/numeros", label: "Números", icon: "☎️" },
-  { href: "/configuracion", label: "Personalidad", icon: "💬" },
-
-  // Avanzado
-  { section: "Avanzado", href: "/equipo", label: "Equipo", icon: "👨‍👩‍👧" },
-  { href: "/plantillas", label: "Plantillas", icon: "📚" },
+  { href: "/live-monitor", label: "Live monitor", icon: "🟢", soon: true },
+  { href: "/leads", label: "Leads", icon: "👥" },
+  { href: "/calendario", label: "Calendario", icon: "📅", soon: true },
+  { href: "/campanas", label: "Campañas", icon: "📣", soon: true },
+  { href: "/knowledge", label: "Knowledge", icon: "📚", soon: true },
   { href: "/integraciones", label: "Integraciones", icon: "🔌" },
-  { href: "/logs", label: "Logs", icon: "📝" },
-  { href: "/diagnostics", label: "Diagnóstico", icon: "🩺" },
+  { href: "/equipo", label: "Equipo", icon: "👨‍👩‍👧" },
+
+  // Cuenta
+  { section: "Cuenta", href: "/facturacion", label: "Facturación", icon: "💳", soon: true },
+  { href: "/configuracion", label: "Configuración", icon: "⚙️" },
+
+  // Staff (solo placeholder, opcional)
+  { section: "B1 Staff", href: "/panel-admin", label: "Panel admin", icon: "🛡️", soon: true },
 ];
 
 type Profile = {
@@ -63,8 +64,6 @@ export function Sidebar() {
       const raw = localStorage.getItem("sofia_session");
       if (raw) setProfile(JSON.parse(raw));
     } catch {}
-
-    // Sincronizar entre pestañas / actualizaciones del perfil
     function onStorage(e: StorageEvent) {
       if (e.key === "sofia_session") {
         try {
@@ -77,37 +76,42 @@ export function Sidebar() {
   }, []);
 
   const displayName = profile.owner_name || "Mi cuenta";
-  const displayEmail = profile.owner_email || "Sin sesión";
+  const orgName = profile.business_name || "Mi negocio";
+
+  // Mock plan (later: fetch from backend)
+  const planMinutesUsed = 17;
+  const planMinutesTotal = 5000;
+  const planPct = Math.round((planMinutesUsed / planMinutesTotal) * 100);
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-white/[0.06] bg-neutral-950">
       {/* Logo */}
-      <Link href="/dashboard" className="flex h-20 items-center gap-3 px-6 border-b border-white/[0.06] hover:bg-white/[0.02] transition">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 via-amber-400 to-cyan-400 text-lg font-bold text-black shadow-lg shadow-fuchsia-500/20">
+      <Link
+        href="/dashboard"
+        className="flex h-16 items-center gap-3 px-5 border-b border-white/[0.06] hover:bg-white/[0.02] transition"
+      >
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400 text-base font-bold text-black">
           {PRODUCT_INITIAL}
         </div>
-        <div>
-          <p className="font-heading text-lg font-semibold italic tracking-tight bg-gradient-to-r from-fuchsia-300 via-amber-300 to-cyan-300 bg-clip-text text-transparent">
-            {PRODUCT_NAME}
-          </p>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-neutral-500">
-            {PRODUCT_TAGLINE}
-          </p>
-        </div>
+        <p className="font-heading text-xl font-bold italic tracking-tight">
+          {PRODUCT_NAME.replace("AI", "")}
+          <span className="text-amber-400">AI</span>
+        </p>
       </Link>
 
       {/* Nav */}
-      <nav className="flex-1 space-y-0.5 px-3 py-4 overflow-y-auto">
+      <nav className="flex-1 space-y-0.5 px-3 py-3 overflow-y-auto">
         {nav.map((item, i) => {
           const active = pathname === item.href;
-          const showSection = !!item.section;
           return (
             <div key={item.href}>
-              {showSection && (
-                <p className={cn(
-                  "px-3 text-[10px] uppercase tracking-[0.2em] text-neutral-600 mb-1.5",
-                  i > 0 && "mt-4"
-                )}>
+              {item.section && (
+                <p
+                  className={cn(
+                    "px-3 text-[10px] uppercase tracking-[0.18em] text-neutral-600 mb-1.5",
+                    i > 0 && "mt-4"
+                  )}
+                >
                   {item.section}
                 </p>
               )}
@@ -115,18 +119,20 @@ export function Sidebar() {
                 href={item.soon ? "#" : item.href}
                 onClick={(e) => item.soon && e.preventDefault()}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-[13px] transition-colors",
                   active
-                    ? "bg-white/[0.08] text-white"
+                    ? "bg-amber-400/10 text-amber-300"
                     : item.soon
                       ? "text-neutral-600 cursor-not-allowed"
                       : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
                 )}
               >
-                <span className="text-base">{item.icon}</span>
-                <span className="flex-1">{item.label}</span>
+                <span className="w-4 text-center text-[15px] leading-none">
+                  {item.icon}
+                </span>
+                <span className="flex-1 truncate">{item.label}</span>
                 {item.soon && (
-                  <span className="text-[9px] uppercase tracking-wider text-amber-500/70 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                  <span className="text-[8.5px] uppercase tracking-wider text-amber-500/70">
                     Próx
                   </span>
                 )}
@@ -136,7 +142,31 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User Profile (footer) */}
+      {/* Plan widget */}
+      <div className="px-4 pt-3 pb-2 border-t border-white/[0.06]">
+        <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] uppercase tracking-wider text-neutral-500">
+              Plan Business
+            </span>
+            <span className="text-[10px] text-amber-400 font-mono">
+              {planPct}%
+            </span>
+          </div>
+          <p className="text-sm font-mono text-neutral-100 mb-1.5">
+            {planMinutesUsed}{" "}
+            <span className="text-neutral-500">/ {planMinutesTotal} min</span>
+          </p>
+          <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-amber-400 to-orange-400"
+              style={{ width: `${Math.max(planPct, 2)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* User Profile */}
       {mounted && (
         <Link
           href="/perfil"
@@ -145,7 +175,6 @@ export function Sidebar() {
             pathname === "/perfil" && "bg-white/[0.04]"
           )}
         >
-          {/* Avatar */}
           {profile.avatar_data_url ? (
             <img
               src={profile.avatar_data_url}
@@ -153,24 +182,18 @@ export function Sidebar() {
               className="h-9 w-9 rounded-full object-cover ring-1 ring-white/[0.1]"
             />
           ) : (
-            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-fuchsia-500/40 to-amber-500/40 ring-1 ring-white/[0.1] flex items-center justify-center text-xs font-semibold text-white">
+            <div className="h-9 w-9 rounded-full bg-neutral-800 ring-1 ring-white/[0.1] flex items-center justify-center text-xs font-semibold text-neutral-200">
               {initialsOf(profile.owner_name)}
             </div>
           )}
-
-          {/* Texto */}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-neutral-100 truncate">
               {displayName}
             </p>
-            <p className="text-[11px] text-neutral-500 truncate">
-              {displayEmail}
-            </p>
+            <p className="text-[11px] text-neutral-500 truncate">{orgName}</p>
           </div>
-
-          {/* Chevron */}
-          <span className="text-neutral-600 group-hover:text-neutral-300 transition">
-            ⚙
+          <span className="text-neutral-600 group-hover:text-neutral-300 text-[11px]">
+            ↗
           </span>
         </Link>
       )}

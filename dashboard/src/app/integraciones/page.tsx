@@ -5,11 +5,11 @@ export default function IntegracionesPage() {
   return (
     <Shell>
       <div className="mb-8">
-        <h1 className="font-heading text-4xl font-bold italic tracking-tight">
+        <h1 className="font-heading text-5xl font-bold italic tracking-tight">
           Integraciones
         </h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Conecta Voicely con Slack, Zapier y otras herramientas
+        <p className="mt-2 text-base text-neutral-500">
+          Conecta SofiaAI con tus herramientas
         </p>
       </div>
       <IntegracionesView />
