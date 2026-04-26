@@ -36,8 +36,8 @@ const nav: NavItem[] = [
   { section: "Cuenta", href: "/facturacion", label: "Facturación", icon: "💳", soon: true },
   { href: "/configuracion", label: "Configuración", icon: "⚙️" },
 
-  // Staff (solo placeholder, opcional)
-  { section: "B1 Staff", href: "/panel-admin", label: "Panel admin", icon: "🛡️", soon: true },
+  // Administración
+  { section: "Administración", href: "/panel-admin", label: "Panel admin", icon: "🛡️", soon: true },
 ];
 
 type Profile = {

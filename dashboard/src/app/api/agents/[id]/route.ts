@@ -30,3 +30,16 @@ export async function PATCH(
   const data = await res.json();
   return NextResponse.json(data, { status: res.ok ? 200 : res.status });
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const res = await fetch(
+    `${process.env.MODAL_BASE_URL}/admin/agents/${encodeURIComponent(id)}`,
+    { method: "DELETE" }
+  );
+  const data = await res.json();
+  return NextResponse.json(data, { status: res.ok ? 200 : res.status });
+}
