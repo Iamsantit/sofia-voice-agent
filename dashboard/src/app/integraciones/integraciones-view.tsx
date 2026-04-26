@@ -17,6 +17,7 @@ type Integration = {
   setup_url?: string;
   setup_steps?: string[];
   default_events?: string[];
+  setup_hint?: string;
 };
 
 export function IntegracionesView() {

@@ -15,6 +15,8 @@ type Integration = {
   name: string;
   icon: string;
   description: string;
+  default_events?: string[];
+  setup_hint?: string;
 };
 
 const ALL_EVENTS = [
@@ -37,7 +39,11 @@ export function WebhookFlow({
 }) {
   const [name, setName] = useState(`${integration.name} webhook`);
   const [url, setUrl] = useState("");
-  const [events, setEvents] = useState<string[]>(["call.ended", "lead.hot"]);
+  const [events, setEvents] = useState<string[]>(
+    integration.default_events && integration.default_events.length > 0
+      ? integration.default_events
+      : ["call.ended", "lead.hot"],
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,6 +108,12 @@ export function WebhookFlow({
         </Button>
       </CardHeader>
       <CardContent>
+        {integration.setup_hint && (
+          <div className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.04] p-3 text-xs text-amber-200">
+            <strong className="text-amber-300">Cómo conectarlo:</strong>{" "}
+            {integration.setup_hint}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <Label className="text-xs text-neutral-400">Nombre</Label>
