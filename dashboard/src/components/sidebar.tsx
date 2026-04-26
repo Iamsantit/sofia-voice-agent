@@ -24,20 +24,20 @@ const nav: NavItem[] = [
   { href: "/agentes", label: "Agentes", icon: "🤖" },
   { href: "/numeros", label: "Números", icon: "#" },
   { href: "/llamadas", label: "Llamadas", icon: "📞" },
-  { href: "/live-monitor", label: "Live monitor", icon: "🟢", soon: true },
+  { href: "/live-monitor", label: "Live monitor", icon: "🟢" },
   { href: "/leads", label: "Leads", icon: "👥" },
-  { href: "/calendario", label: "Calendario", icon: "📅", soon: true },
-  { href: "/campanas", label: "Campañas", icon: "📣", soon: true },
-  { href: "/knowledge", label: "Knowledge", icon: "📚", soon: true },
+  { href: "/calendario", label: "Calendario", icon: "📅" },
+  { href: "/campanas", label: "Campañas", icon: "📣" },
+  { href: "/knowledge", label: "Knowledge", icon: "📚" },
   { href: "/integraciones", label: "Integraciones", icon: "🔌" },
   { href: "/equipo", label: "Equipo", icon: "👨‍👩‍👧" },
 
   // Cuenta
-  { section: "Cuenta", href: "/facturacion", label: "Facturación", icon: "💳", soon: true },
+  { section: "Cuenta", href: "/facturacion", label: "Facturación", icon: "💳" },
   { href: "/configuracion", label: "Configuración", icon: "⚙️" },
 
   // Administración
-  { section: "Administración", href: "/panel-admin", label: "Panel admin", icon: "🛡️", soon: true },
+  { section: "Administración", href: "/panel-admin", label: "Panel admin", icon: "🛡️" },
 ];
 
 type Profile = {

@@ -847,6 +847,116 @@ def admin_test_webhook(webhook_id: str):
         return {"status": "error", "message": str(e)}
 
 
+# ── Campaigns ───────────────────────────────────────────────────────────────
+
+
+@web_app.get("/admin/campaigns")
+def admin_list_campaigns():
+    from app.admin.campaigns import list_campaigns
+    try:
+        return {"status": "ok", "campaigns": list_campaigns()}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "campaigns.list.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/campaigns")
+def admin_create_campaign(request: dict):
+    from app.admin.campaigns import create_campaign
+    try:
+        c = create_campaign(
+            name=request.get("name", ""),
+            agent_id=request.get("agent_id", ""),
+            leads=request.get("leads") or [],
+            scheduled_at=request.get("scheduled_at"),
+            notes=request.get("notes", ""),
+        )
+        return {"status": "ok", "campaign": c}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "campaigns.create.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.patch("/admin/campaigns/{campaign_id}")
+def admin_update_campaign(campaign_id: str, request: dict):
+    from app.admin.campaigns import update_campaign
+    try:
+        c = update_campaign(campaign_id, request)
+        return {"status": "ok", "campaign": c}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "campaigns.update.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/campaigns/{campaign_id}")
+def admin_delete_campaign(campaign_id: str):
+    from app.admin.campaigns import delete_campaign
+    try:
+        delete_campaign(campaign_id)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "campaigns.delete.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+# ── Knowledge base ──────────────────────────────────────────────────────────
+
+
+@web_app.get("/admin/knowledge")
+def admin_list_knowledge():
+    from app.admin.knowledge import list_documents
+    try:
+        return {"status": "ok", "documents": list_documents()}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "knowledge.list.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/knowledge")
+def admin_create_knowledge(request: dict):
+    from app.admin.knowledge import create_document
+    try:
+        d = create_document(
+            title=request.get("title", ""),
+            content=request.get("content", ""),
+            tags=request.get("tags") or [],
+        )
+        return {"status": "ok", "document": d}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "knowledge.create.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.patch("/admin/knowledge/{doc_id}")
+def admin_update_knowledge(doc_id: str, request: dict):
+    from app.admin.knowledge import update_document
+    try:
+        d = update_document(doc_id, request)
+        return {"status": "ok", "document": d}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "knowledge.update.fail", e, data=request)
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.delete("/admin/knowledge/{doc_id}")
+def admin_delete_knowledge(doc_id: str):
+    from app.admin.knowledge import delete_document
+    try:
+        delete_document(doc_id)
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "knowledge.delete.fail", e)
+        return {"status": "error", "message": str(e)}
+
+
 # ── Onboarding / Industries ────────────────────────────────────────────────
 
 
