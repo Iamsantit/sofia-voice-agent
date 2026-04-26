@@ -19,6 +19,9 @@ type Integration = {
   description: string;
   status: "available" | "soon";
   setup_kind: "webhook" | "oauth";
+  setup_url?: string;
+  setup_steps?: string[];
+  default_events?: string[];
 };
 
 type Webhook = {
@@ -51,6 +54,8 @@ export function IntegracionesView() {
 
   const [showForm, setShowForm] = useState(false);
   const [presetIntegration, setPresetIntegration] = useState("custom");
+  const [presetSetupSteps, setPresetSetupSteps] = useState<string[] | undefined>();
+  const [presetSetupUrl, setPresetSetupUrl] = useState<string | undefined>();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<string[]>(["call.ended", "lead.hot"]);
@@ -78,19 +83,25 @@ export function IntegracionesView() {
 
   function startConnect(integration: Integration) {
     if (integration.status === "soon") {
-      alert(`${integration.name} estará disponible próximamente. Mientras tanto, puedes usar webhooks personalizados.`);
+      alert(`${integration.name} estará disponible próximamente.`);
       return;
     }
     setPresetIntegration(integration.key);
+    setPresetSetupSteps(integration.setup_steps);
+    setPresetSetupUrl(integration.setup_url);
     setName(`${integration.name} webhook`);
     setUrl("");
-    setEvents(["call.ended", "lead.hot"]);
+    setEvents(integration.default_events ?? ["call.ended", "lead.hot"]);
     setShowForm(true);
     setError(null);
+    // Scroll to top so user sees the form
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 100);
   }
 
   function startCustom() {
     setPresetIntegration("custom");
+    setPresetSetupSteps(undefined);
+    setPresetSetupUrl(undefined);
     setName("Webhook personalizado");
     setUrl("");
     setEvents(["call.ended"]);
@@ -192,7 +203,36 @@ export function IntegracionesView() {
                 : "Configura una URL custom para recibir eventos de Voicely."}
             </p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* Setup steps específicos por integración */}
+            {presetSetupSteps && presetSetupSteps.length > 0 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.04] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] uppercase tracking-wider text-amber-300 font-semibold">
+                    📖 Cómo conectar {presetIntegration}
+                  </p>
+                  {presetSetupUrl && (
+                    <a
+                      href={presetSetupUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-amber-300 hover:underline"
+                    >
+                      Docs oficiales →
+                    </a>
+                  )}
+                </div>
+                <ol className="space-y-1.5 text-xs text-neutral-300">
+                  {presetSetupSteps.map((step, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="text-amber-400 font-medium shrink-0">{i + 1}.</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1">
                 <Label className="text-xs text-neutral-400">Nombre</Label>
