@@ -42,7 +42,8 @@ const INITIAL: FormData = {
 const STEPS = [
   { key: 1, label: "Tu negocio", icon: "🏢" },
   { key: 2, label: "Sobre ti", icon: "👤" },
-  { key: 3, label: "Tu agente", icon: "🤖" },
+  { key: 3, label: "Verificación", icon: "🔐" },
+  { key: 4, label: "Tu agente", icon: "🤖" },
 ];
 
 export function RegistroWizard() {
@@ -97,6 +98,7 @@ export function RegistroWizard() {
   const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpSandboxNotice, setOtpSandboxNotice] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
   const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -108,6 +110,7 @@ export function RegistroWizard() {
   async function requestOtp() {
     setLoading(true);
     setError(null);
+    setDevCode(null);
     try {
       const res = await fetch("/api/auth/request-code", {
         method: "POST",
@@ -120,10 +123,17 @@ export function RegistroWizard() {
         setOtpResendCooldown(45);
         if (result.sandbox_redirect && result.sent_to) {
           setOtpSandboxNotice(
-            `Modo sandbox: el código fue enviado a ${result.sent_to}.`
+            `Modo sandbox de prueba: el correo se envió a ${result.sent_to}. Usa el código que aparece abajo.`,
+          );
+        } else if (result.email_sent === false) {
+          setOtpSandboxNotice(
+            "No se pudo enviar el correo. Usa el código que aparece abajo para continuar.",
           );
         } else {
           setOtpSandboxNotice(null);
+        }
+        if (typeof result.dev_code === "string") {
+          setDevCode(result.dev_code);
         }
         setTimeout(() => otpInputs.current[0]?.focus(), 100);
       } else {
@@ -432,7 +442,12 @@ export function RegistroWizard() {
               ← Atrás
             </Button>
             <Button
-              onClick={() => setStep(3)}
+              onClick={async () => {
+                if (!canNext2) return;
+                // Move to OTP step optimistically; request the code in parallel
+                setStep(3);
+                if (!otpRequested) requestOtp();
+              }}
               disabled={!canNext2}
               className="bg-amber-400 text-black hover:bg-amber-300 font-medium px-8 disabled:opacity-40"
             >
@@ -443,8 +458,110 @@ export function RegistroWizard() {
       )}
 
       {/* Step 3: OTP verification */}
-      {/* Step 3: Agent */}
       {step === 3 && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="font-heading text-3xl font-bold italic tracking-tight">
+              Verifica tu correo
+            </h2>
+            <p className="mt-2 text-sm text-neutral-400">
+              Enviamos un código de 6 dígitos a{" "}
+              <span className="text-neutral-200">{data.owner_email}</span>.
+              Revisa tu bandeja (y la carpeta de spam).
+            </p>
+          </div>
+
+          {otpSandboxNotice && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.04] p-3 text-xs text-amber-300">
+              {otpSandboxNotice}
+            </div>
+          )}
+
+          {devCode && (
+            <div className="rounded-xl border border-amber-400/40 bg-amber-400/[0.06] p-4 text-center">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-amber-300 mb-2">
+                Tu código de prueba
+              </p>
+              <p className="font-mono text-3xl tracking-[0.4em] text-amber-200 font-bold">
+                {devCode}
+              </p>
+              <p className="text-[11px] text-neutral-500 mt-2">
+                Esto solo aparece en modo prueba. En producción el código llega al correo.
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <Label className="text-sm text-neutral-300">Código de 6 dígitos</Label>
+            <div className="flex gap-2 justify-center">
+              {otp.map((digit, i) => (
+                <input
+                  key={i}
+                  ref={(el) => {
+                    otpInputs.current[i] = el;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleOtpInput(i, e.target.value)}
+                  onKeyDown={(e) => handleOtpKey(i, e)}
+                  onPaste={i === 0 ? handleOtpPaste : undefined}
+                  className="h-14 w-12 text-center text-2xl font-mono font-semibold rounded-md bg-white/[0.04] border border-white/[0.1] outline-none focus:border-amber-400/60 focus:bg-white/[0.06]"
+                />
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/[0.04] p-3 text-xs text-red-300">
+              {error}
+            </div>
+          )}
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={requestOtp}
+              disabled={otpResendCooldown > 0 || loading}
+              className="text-xs text-amber-400 hover:text-amber-300 disabled:text-neutral-600 disabled:cursor-not-allowed"
+            >
+              {otpResendCooldown > 0
+                ? `Reenviar código en ${otpResendCooldown}s`
+                : loading
+                  ? "Enviando…"
+                  : "Reenviar código"}
+            </button>
+          </div>
+
+          <div className="flex justify-between pt-4">
+            <Button
+              onClick={() => {
+                setOtp(["", "", "", "", "", ""]);
+                setOtpRequested(false);
+                setError(null);
+                setStep(2);
+              }}
+              variant="outline"
+              disabled={otpVerifying}
+              className="border-white/[0.08] text-neutral-300 hover:bg-white/[0.04]"
+            >
+              ← Atrás
+            </Button>
+            <Button
+              onClick={verifyOtp}
+              disabled={otp.join("").length !== 6 || otpVerifying}
+              className="bg-amber-400 text-black hover:bg-amber-300 font-medium px-8 disabled:opacity-40"
+            >
+              {otpVerifying ? "Verificando…" : "Verificar →"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Agent */}
+      {step === 4 && (
         <div className="space-y-6">
           <div>
             <h2 className="font-heading text-3xl font-bold italic tracking-tight">
@@ -590,7 +707,7 @@ export function RegistroWizard() {
 
           <div className="flex justify-between pt-4">
             <Button
-              onClick={() => setStep(2)}
+              onClick={() => setStep(3)}
               variant="outline"
               disabled={loading}
               className="border-white/[0.08] text-neutral-300 hover:bg-white/[0.04]"
