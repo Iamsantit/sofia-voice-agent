@@ -8,31 +8,44 @@ import { Label } from "@/components/ui/label";
 export function LoginForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.includes("@")) return;
-    setLoading(true);
+    setSubmitting(true);
     setError(null);
-    try {
-      const res = await fetch("/api/auth/quick-signin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Optimistic redirect: kick off the auth call, prefetch the dashboard,
+    // and navigate immediately. If the cookie is set in time the dashboard
+    // loads authenticated; if not, the proxy/middleware bounces back here.
+    fetch("/api/auth/quick-signin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: cleanEmail }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.status !== "ok") {
+          // Auth failed — undo optimistic state, surface error
+          setSubmitting(false);
+          setError(data?.message ?? "No se pudo iniciar sesión");
+          // Send the user back to /login if we already navigated
+          router.replace("/login");
+        }
+      })
+      .catch(() => {
+        setSubmitting(false);
+        setError("Error de red. Intenta de nuevo.");
+        router.replace("/login");
       });
-      const data = await res.json();
-      if (data.status === "ok") {
-        router.push("/dashboard");
-      } else {
-        setError(data.message ?? "No se pudo iniciar sesión");
-      }
-    } catch {
-      setError("Error de red. Intenta de nuevo.");
-    } finally {
-      setLoading(false);
-    }
+
+    // Navigate now — the dashboard renders its skeleton instantly.
+    router.prefetch("/dashboard");
+    router.push("/dashboard");
   }
 
   const emailValid = email.includes("@") && email.includes(".");
@@ -43,9 +56,7 @@ export function LoginForm() {
         <h1 className="font-heading text-3xl font-bold italic tracking-tight">
           Bienvenido de vuelta
         </h1>
-        <p className="text-sm text-neutral-400">
-          Entra con tu correo
-        </p>
+        <p className="text-sm text-neutral-400">Entra con tu correo</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -73,10 +84,10 @@ export function LoginForm() {
 
         <Button
           type="submit"
-          disabled={!emailValid || loading}
+          disabled={!emailValid || submitting}
           className="w-full bg-amber-400 text-black hover:bg-amber-300 font-medium py-3 disabled:opacity-40"
         >
-          {loading ? "Entrando…" : "Entrar"}
+          {submitting ? "Entrando…" : "Entrar"}
         </Button>
       </form>
 

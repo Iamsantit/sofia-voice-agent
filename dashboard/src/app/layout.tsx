@@ -3,6 +3,7 @@ import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { SpaceBackground } from "@/components/fx/space-background";
 import { CursorGlow } from "@/components/fx/cursor-glow";
+import { ModalPrewarm } from "@/components/fx/modal-prewarm";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -34,6 +35,7 @@ export default function RootLayout({
         {/* Premium space FX — sit behind everything */}
         <SpaceBackground />
         <CursorGlow />
+        <ModalPrewarm />
         {/* Content stays above (z-10) */}
         <div className="relative z-10 flex flex-col min-h-screen">
           {children}
