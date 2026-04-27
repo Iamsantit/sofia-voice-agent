@@ -7,15 +7,22 @@ from app.logger import Phase, clear_logs, log, read_recent
 modal_app = modal.App("sofia-voice-agent")
 app = modal_app  # Modal CLI looks for `app` by default
 
-image = modal.Image.debian_slim(python_version="3.11").pip_install(
-    "retell-sdk>=5.0.0",
-    "twilio>=9.0.0",
-    "anthropic>=0.42.0",
-    "notion-client>=2.2.0,<3.0.0",
-    "requests>=2.32.0",
-    "python-dotenv>=1.0.0",
-    "fastapi>=0.115.0",
-    "pyjwt>=2.8.0",
+image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install(
+        "retell-sdk>=5.0.0",
+        "twilio>=9.0.0",
+        "anthropic>=0.42.0",
+        "notion-client>=2.2.0,<3.0.0",
+        "requests>=2.32.0",
+        "python-dotenv>=1.0.0",
+        "fastapi>=0.115.0",
+        "pyjwt>=2.8.0",
+    )
+    # Modal v1+ requires local Python source to be added explicitly. Without
+    # this the container cannot import `app.*` and every endpoint fails with
+    # ModuleNotFoundError, which surfaces to Vercel as a 504 timeout.
+    .add_local_python_source("app")
 )
 
 sofia_secret = modal.Secret.from_name("sofia-credentials")
