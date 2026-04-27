@@ -24,21 +24,44 @@ const LANG_LABELS: Record<string, string> = {
   "it-IT": "Italiano",
 };
 
+const CACHE_KEY = "sofia_agents_cache";
+
 export function AgentesView() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Hydrate from sessionStorage so returning users see their list instantly
+  // while we refresh in background.
+  const [agents, setAgents] = useState<Agent[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      return cached ? (JSON.parse(cached) as Agent[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  // Only show full skeleton on first ever visit (no cache)
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return !sessionStorage.getItem(CACHE_KEY);
+    } catch {
+      return true;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/agents", { cache: "no-store" });
       const data = await res.json();
       if (data.status === "ok") {
-        setAgents(data.agents ?? []);
+        const list: Agent[] = data.agents ?? [];
+        setAgents(list);
+        try {
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(list));
+        } catch {}
       } else {
         setError(data.message ?? "No se pudieron cargar los agentes");
       }

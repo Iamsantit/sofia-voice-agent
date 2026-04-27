@@ -11,7 +11,7 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.includes("@")) return;
     setSubmitting(true);
@@ -19,33 +19,29 @@ export function LoginForm() {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Optimistic redirect: kick off the auth call, prefetch the dashboard,
-    // and navigate immediately. If the cookie is set in time the dashboard
-    // loads authenticated; if not, the proxy/middleware bounces back here.
-    fetch("/api/auth/quick-signin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: cleanEmail }),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.status !== "ok") {
-          // Auth failed — undo optimistic state, surface error
-          setSubmitting(false);
-          setError(data?.message ?? "No se pudo iniciar sesión");
-          // Send the user back to /login if we already navigated
-          router.replace("/login");
-        }
-      })
-      .catch(() => {
-        setSubmitting(false);
-        setError("Error de red. Intenta de nuevo.");
-        router.replace("/login");
-      });
-
-    // Navigate now — the dashboard renders its skeleton instantly.
+    // Prefetch the dashboard right away so the next navigation is instant
     router.prefetch("/dashboard");
-    router.push("/dashboard");
+
+    try {
+      // The route handler is now local-only (signs JWT in Next.js, no
+      // Modal round-trip), so this completes in <100ms.
+      const res = await fetch("/api/auth/quick-signin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status !== "ok") {
+        setSubmitting(false);
+        setError(data?.message ?? "No se pudo iniciar sesión");
+        return;
+      }
+      // Cookie is now set — middleware will let us through
+      router.replace("/dashboard");
+    } catch {
+      setSubmitting(false);
+      setError("Error de red. Intenta de nuevo.");
+    }
   }
 
   const emailValid = email.includes("@") && email.includes(".");

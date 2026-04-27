@@ -24,12 +24,15 @@ type CreationStage = {
 };
 
 const STAGES: CreationStage[] = [
-  { label: "Verificando tus datos", icon: "🔍", dwell: 1.0 },
-  { label: "Generando voz personalizada", icon: "🎙️", dwell: 1.4 },
-  { label: "Conectando con Claude", icon: "🧠", dwell: 1.4 },
-  { label: "Configurando integraciones", icon: "🔌", dwell: 1.4 },
-  { label: "Casi listo", icon: "✨", dwell: 1.6 },
+  { label: "Verificando tus datos", icon: "🔍", dwell: 0.5 },
+  { label: "Generando voz personalizada", icon: "🎙️", dwell: 0.7 },
+  { label: "Conectando con Claude", icon: "🧠", dwell: 0.7 },
+  { label: "Configurando integraciones", icon: "🔌", dwell: 0.7 },
+  { label: "Casi listo", icon: "✨", dwell: 0.6 },
 ];
+
+/** Minimum visual time on the progress screen so it doesn't flash. */
+const MIN_VISUAL_MS = 1500;
 
 export function OnboardingSuccess() {
   const router = useRouter();
@@ -56,7 +59,10 @@ export function OnboardingSuccess() {
     } catch {}
   }, []);
 
-  // Run the actual onboarding in the background while we show progress
+  // Run the actual onboarding in the background while we show progress.
+  // The MOMENT the API returns success, jump straight to the dashboard —
+  // no intermediate success card. The dashboard already renders instantly
+  // with sessionStorage cache, so the user perceives a single fluid handoff.
   useEffect(() => {
     if (!isCreating || fired.current) return;
     fired.current = true;
@@ -72,6 +78,11 @@ export function OnboardingSuccess() {
       router.replace("/dashboard");
       return;
     }
+
+    // Prefetch dashboard so the navigation feels instant
+    router.prefetch("/dashboard");
+
+    const startedAt = performance.now();
 
     // Quick-signin in parallel so the cookie is ready by the time we land
     fetch("/api/auth/quick-signin", {
@@ -90,7 +101,6 @@ export function OnboardingSuccess() {
       .then((r) => r.json())
       .then((result) => {
         if (result.status === "ok") {
-          // Persist agent_id + llm_id alongside the rest of the session
           try {
             const raw = localStorage.getItem("sofia_session");
             const prev = raw ? JSON.parse(raw) : {};
@@ -105,14 +115,14 @@ export function OnboardingSuccess() {
             );
             sessionStorage.removeItem("sofia_pending_onboarding");
           } catch {}
-          setCreatedAgentId(result.agent_id);
-          setSession((s) => ({
-            ...s,
-            agent_id: result.agent_id,
-            llm_id: result.llm_id,
-            agent_name: result.agent_name ?? s.agent_name,
-          }));
-          setPhase("done");
+
+          // Honour MIN_VISUAL_MS so we never flash through the screen
+          const elapsed = performance.now() - startedAt;
+          const wait = Math.max(0, MIN_VISUAL_MS - elapsed);
+          setTimeout(() => {
+            // Auto-redirect — skip success card entirely
+            router.replace("/dashboard");
+          }, wait);
         } else {
           setErrorMsg(result.message ?? "No se pudo crear el agente");
           setPhase("error");
