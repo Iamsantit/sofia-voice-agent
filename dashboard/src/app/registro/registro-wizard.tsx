@@ -5,14 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-
-type Industry = {
-  key: string;
-  label: string;
-  icon: string;
-  description: string;
-  default_agent_name: string;
-};
+import { INDUSTRIES, type Industry } from "@/lib/industries";
 
 type FormData = {
   // Step 1: Negocio
@@ -56,15 +49,23 @@ export function RegistroWizard() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [data, setData] = useState<FormData>(INITIAL);
-  const [industries, setIndustries] = useState<Industry[]>([]);
+  // Industries are hardcoded for instant render (no Modal cold-start wait).
+  // We still refresh from backend on mount in case the catalog changes later.
+  const [industries, setIndustries] = useState<Industry[]>(INDUSTRIES);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/industries", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d) => setIndustries(d.industries ?? []))
-      .catch(() => setError("No se pudieron cargar las industrias"));
+      .then((d) => {
+        if (Array.isArray(d.industries) && d.industries.length > 0) {
+          setIndustries(d.industries);
+        }
+      })
+      .catch(() => {
+        // Silent — we already have the static fallback rendered.
+      });
   }, []);
 
   const selectedIndustry = industries.find((i) => i.key === data.industry);

@@ -3,8 +3,8 @@ import { LoginForm } from "./login-form";
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col">
-      <header className="border-b border-white/[0.06]">
+    <div className="min-h-screen text-neutral-100 flex flex-col">
+      <header className="border-b border-white/[0.06] glass">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-lg font-bold text-black">
