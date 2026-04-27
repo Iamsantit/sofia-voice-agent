@@ -59,10 +59,14 @@ export function OnboardingSuccess() {
     } catch {}
   }, []);
 
-  // Run the actual onboarding in the background while we show progress.
-  // The MOMENT the API returns success, jump straight to the dashboard —
-  // no intermediate success card. The dashboard already renders instantly
-  // with sessionStorage cache, so the user perceives a single fluid handoff.
+  // /exito is now a SHORT transition (~1.8s) that does NOT wait for the
+  // Retell API. We just:
+  //  1. Set the auth cookie (instant — local JWT signing)
+  //  2. Show a brief premium animation
+  //  3. Hand off to /dashboard, which owns the actual onboarding fetch
+  //     and shows a "creating agent" toast while it completes.
+  // This way the user reaches their workspace in <2s no matter how
+  // slow Retell's API happens to be on cold-start.
   useEffect(() => {
     if (!isCreating || fired.current) return;
     fired.current = true;
@@ -74,17 +78,14 @@ export function OnboardingSuccess() {
     } catch {}
 
     if (!payload) {
-      // Nothing to create — likely a stale URL. Bounce to dashboard.
       router.replace("/dashboard");
       return;
     }
 
-    // Prefetch dashboard so the navigation feels instant
+    // Prefetch dashboard now so the navigation in 1.8s is instant
     router.prefetch("/dashboard");
 
-    const startedAt = performance.now();
-
-    // Quick-signin in parallel so the cookie is ready by the time we land
+    // Set the auth cookie — local JWT, completes in <100ms
     fetch("/api/auth/quick-signin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -93,45 +94,11 @@ export function OnboardingSuccess() {
       }),
     }).catch(() => {});
 
-    fetch("/api/onboarding", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-      .then((r) => r.json())
-      .then((result) => {
-        if (result.status === "ok") {
-          try {
-            const raw = localStorage.getItem("sofia_session");
-            const prev = raw ? JSON.parse(raw) : {};
-            localStorage.setItem(
-              "sofia_session",
-              JSON.stringify({
-                ...prev,
-                agent_id: result.agent_id,
-                llm_id: result.llm_id,
-                agent_name: result.agent_name ?? prev.agent_name,
-              }),
-            );
-            sessionStorage.removeItem("sofia_pending_onboarding");
-          } catch {}
-
-          // Honour MIN_VISUAL_MS so we never flash through the screen
-          const elapsed = performance.now() - startedAt;
-          const wait = Math.max(0, MIN_VISUAL_MS - elapsed);
-          setTimeout(() => {
-            // Auto-redirect — skip success card entirely
-            router.replace("/dashboard");
-          }, wait);
-        } else {
-          setErrorMsg(result.message ?? "No se pudo crear el agente");
-          setPhase("error");
-        }
-      })
-      .catch((e) => {
-        setErrorMsg(e instanceof Error ? e.message : "Error de red");
-        setPhase("error");
-      });
+    // Hand off after the visual minimum. Dashboard handles the rest.
+    const t = setTimeout(() => {
+      router.replace("/dashboard");
+    }, MIN_VISUAL_MS + 300); // small buffer past last stage
+    return () => clearTimeout(t);
   }, [isCreating, router]);
 
   // Cycle through visual stages while we wait. Stops when phase changes.
