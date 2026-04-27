@@ -221,56 +221,36 @@ export function RegistroWizard() {
     }
   }
 
-  async function handleSubmit() {
-    setLoading(true);
+  function handleSubmit() {
     setError(null);
-    try {
-      const payload: Record<string, unknown> = { ...data };
-      if (data.industry === "custom" && data.generated_prompt) {
-        payload.general_prompt_override = data.generated_prompt;
-        payload.begin_message_override = data.generated_greeting;
-      }
-      const res = await fetch("/api/onboarding", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json();
-      if (result.status === "ok") {
-        // Crear sesión sin OTP (auth simplificado)
-        try {
-          await fetch("/api/auth/quick-signin", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: data.owner_email.trim().toLowerCase() }),
-          });
-        } catch {}
 
-        // Persist business info en localStorage para sidebar/perfil
-        try {
-          localStorage.setItem(
-            "sofia_session",
-            JSON.stringify({
-              business_name: data.business_name,
-              industry: data.industry,
-              owner_name: data.owner_name,
-              owner_email: data.owner_email,
-              agent_id: result.agent_id,
-              llm_id: result.llm_id,
-              agent_name: result.agent_name,
-              created_at: new Date().toISOString(),
-            })
-          );
-        } catch {}
-        router.push(`/onboarding/exito?agent_id=${encodeURIComponent(result.agent_id)}`);
-      } else {
-        setError(result.message ?? "Error desconocido");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error de red");
-    } finally {
-      setLoading(false);
+    const payload: Record<string, unknown> = { ...data };
+    if (data.industry === "custom" && data.generated_prompt) {
+      payload.general_prompt_override = data.generated_prompt;
+      payload.begin_message_override = data.generated_greeting;
     }
+
+    // Persist what we already know so /exito can render the success card
+    // immediately with the user's name, business, etc. agent_id arrives later.
+    try {
+      localStorage.setItem(
+        "sofia_session",
+        JSON.stringify({
+          business_name: data.business_name,
+          industry: data.industry,
+          owner_name: data.owner_name,
+          owner_email: data.owner_email,
+          agent_name: data.agent_name,
+          created_at: new Date().toISOString(),
+        }),
+      );
+      // Stash the payload so /exito can fire the actual onboarding
+      sessionStorage.setItem("sofia_pending_onboarding", JSON.stringify(payload));
+    } catch {}
+
+    // Navigate INSTANTLY. The success page does the heavy creation
+    // in background and shows animated progress while waiting.
+    router.push("/onboarding/exito?creating=1");
   }
 
   return (
