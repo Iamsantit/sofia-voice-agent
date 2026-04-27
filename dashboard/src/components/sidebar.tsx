@@ -84,11 +84,11 @@ export function Sidebar() {
   const planPct = Math.round((planMinutesUsed / planMinutesTotal) * 100);
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-white/[0.06] bg-neutral-950">
+    <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-white/[0.06] glass-strong">
       {/* Logo */}
       <Link
         href="/dashboard"
-        className="flex h-16 items-center gap-3 px-5 border-b border-white/[0.06] hover:bg-white/[0.02] transition"
+        className="flex h-16 items-center gap-3 px-5 border-b border-white/[0.06] hover:bg-white/[0.04] transition"
       >
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400 text-base font-bold text-black">
           {PRODUCT_INITIAL}

@@ -165,10 +165,10 @@ function PlanCard({ plan, annual }: { plan: Plan; annual: boolean }) {
 
   return (
     <div
-      className={`relative rounded-2xl border p-6 flex flex-col ${
+      className={`lift relative rounded-2xl p-6 flex flex-col ${
         plan.highlight
-          ? "border-amber-400/50 bg-gradient-to-b from-amber-400/[0.06] to-transparent shadow-[0_0_60px_-15px_rgba(251,191,36,0.3)]"
-          : "border-white/[0.08] bg-white/[0.02]"
+          ? "gradient-border bg-gradient-to-b from-amber-400/[0.08] to-transparent shadow-[0_0_60px_-15px_rgba(251,191,36,0.4)]"
+          : "border border-white/[0.08] glass hover:border-amber-400/20 transition"
       }`}
     >
       {plan.highlight && (

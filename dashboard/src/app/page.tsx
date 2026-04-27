@@ -3,6 +3,7 @@ import { Pricing } from "@/components/landing/pricing";
 import { FAQ } from "@/components/landing/faq";
 import { Stats } from "@/components/landing/stats";
 import { HowItWorks } from "@/components/landing/how-it-works";
+import { Reveal } from "@/components/fx/reveal";
 
 const INDUSTRIES = [
   { icon: "🏠", label: "Inmobiliaria" },
@@ -74,9 +75,9 @@ const TESTIMONIALS = [
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
+    <div className="min-h-screen text-neutral-100">
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-neutral-950/80 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] glass">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400 text-base font-bold text-black">
@@ -149,9 +150,7 @@ export default function LandingPage() {
             <h1 className="font-heading text-5xl md:text-7xl font-bold italic tracking-tight leading-[1.05]">
               La recepcionista que
               <br />
-              <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-                nunca duerme.
-              </span>
+              <span className="text-aurora">nunca duerme.</span>
             </h1>
             <p className="mt-6 text-lg text-neutral-400 max-w-2xl">
               Sofia contesta tus llamadas, califica leads, agenda citas y
@@ -197,12 +196,17 @@ export default function LandingPage() {
       </section>
 
       {/* Stats animados */}
-      <Stats />
+      <Reveal>
+        <Stats />
+      </Reveal>
 
       {/* Cómo funciona */}
-      <HowItWorks />
+      <Reveal>
+        <HowItWorks />
+      </Reveal>
 
       {/* Features */}
+      <Reveal>
       <section id="features" className="border-t border-white/[0.06]">
         <div className="max-w-7xl mx-auto px-6 py-24">
           <div className="max-w-2xl mb-12">
@@ -218,7 +222,7 @@ export default function LandingPage() {
             {FEATURES.map((f) => (
               <div
                 key={f.title}
-                className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-6 hover:bg-white/[0.04] hover:border-amber-400/20 transition group"
+                className="lift rounded-xl border border-white/[0.06] glass p-6 hover:border-amber-400/30 hover:shadow-[0_0_40px_-15px_rgba(251,191,36,0.4)] transition group"
               >
                 <div className="text-3xl mb-3 group-hover:scale-110 transition-transform">
                   {f.icon}
@@ -233,7 +237,10 @@ export default function LandingPage() {
         </div>
       </section>
 
+      </Reveal>
+
       {/* Industries */}
+      <Reveal>
       <section id="industries" className="border-t border-white/[0.06]">
         <div className="max-w-7xl mx-auto px-6 py-24">
           <div className="max-w-2xl mb-12">
@@ -250,7 +257,7 @@ export default function LandingPage() {
             {INDUSTRIES.map((i) => (
               <div
                 key={i.label}
-                className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-5 text-center hover:bg-amber-500/[0.04] hover:border-amber-500/20 transition cursor-default"
+                className="lift rounded-xl border border-white/[0.06] glass p-5 text-center hover:border-amber-500/30 hover:shadow-[0_0_30px_-15px_rgba(251,191,36,0.4)] transition cursor-default"
               >
                 <div className="text-3xl mb-2">{i.icon}</div>
                 <p className="text-sm text-neutral-200">{i.label}</p>
@@ -264,7 +271,10 @@ export default function LandingPage() {
         </div>
       </section>
 
+      </Reveal>
+
       {/* Testimonials */}
+      <Reveal>
       <section className="border-t border-white/[0.06]">
         <div className="max-w-7xl mx-auto px-6 py-24">
           <div className="text-center mb-12">
@@ -276,7 +286,7 @@ export default function LandingPage() {
             {TESTIMONIALS.map((t) => (
               <div
                 key={t.author}
-                className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 flex flex-col"
+                className="lift rounded-2xl border border-white/[0.06] glass p-6 flex flex-col hover:border-amber-400/30 transition"
               >
                 <div className="text-amber-400 text-2xl mb-3">"</div>
                 <p className="text-sm text-neutral-300 leading-relaxed flex-1">
@@ -299,13 +309,20 @@ export default function LandingPage() {
         </div>
       </section>
 
+      </Reveal>
+
       {/* Pricing con toggle */}
-      <Pricing />
+      <Reveal>
+        <Pricing />
+      </Reveal>
 
       {/* FAQ */}
-      <FAQ />
+      <Reveal>
+        <FAQ />
+      </Reveal>
 
       {/* CTA final */}
+      <Reveal>
       <section className="border-t border-white/[0.06] relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(251,191,36,0.08),transparent_60%)]" />
         <div className="max-w-4xl mx-auto px-6 py-24 text-center relative">
@@ -336,6 +353,8 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      </Reveal>
 
       {/* Footer */}
       <footer className="border-t border-white/[0.06]">
