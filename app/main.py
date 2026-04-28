@@ -1404,6 +1404,48 @@ def admin_onboarding(request: dict):
             webhook_url=webhook_url,
         )
 
+        # Auto-link the new agent to any existing Retell phone number(s).
+        # This prevents the "old demo agent answers my number" problem on a
+        # single-tenant deployment: when the user signs up, the available
+        # number gets re-routed to their freshly-baked agent automatically.
+        try:
+            from app.admin.retell_mgmt import (
+                list_phone_numbers,
+                update_phone_number,
+            )
+
+            new_agent_id = result["agent_id"]
+            for n in list_phone_numbers():
+                phone = n.get("phone_number")
+                if not phone:
+                    continue
+                # Skip if already pointing at the just-created agent
+                if (
+                    n.get("inbound_agent_id") == new_agent_id
+                    and n.get("outbound_agent_id") == new_agent_id
+                ):
+                    continue
+                update_phone_number(
+                    phone,
+                    {
+                        "inbound_agent_id": new_agent_id,
+                        "outbound_agent_id": new_agent_id,
+                        "nickname": f"{business_name} - {agent_name}",
+                    },
+                )
+                log.info(
+                    Phase.SYSTEM,
+                    "onboarding.phone_relinked",
+                    data={"phone": phone, "agent_id": new_agent_id},
+                )
+        except Exception as pe:
+            log.exception(
+                Phase.SYSTEM,
+                "onboarding.phone_relink.fail",
+                pe,
+                data={"agent_id": result.get("agent_id")},
+            )
+
         # Link agent to user (if email provided)
         owner_email = (request.get("owner_email") or "").strip().lower()
         if owner_email:
