@@ -12,14 +12,17 @@ type FormData = {
   industry: string;
   business_name: string;
   city: string;
-  // Step 2: Dueño
-  owner_name: string;
-  owner_email: string;
+  // Step 2: Cuenta del dueño
+  first_name: string;
+  last_name: string;
   owner_phone: string;
+  owner_email: string;
+  password: string;
+  password_confirm: string;
   // Step 3: Agente
   agent_name: string;
   temperature: number;
-  // Extra (solo para industry === "otro")
+  // Extra (solo para industry === "custom")
   description: string;
   generated_prompt: string;
   generated_greeting: string;
@@ -29,9 +32,12 @@ const INITIAL: FormData = {
   industry: "",
   business_name: "",
   city: "",
-  owner_name: "",
-  owner_email: "",
+  first_name: "",
+  last_name: "",
   owner_phone: "",
+  owner_email: "",
+  password: "",
+  password_confirm: "",
   agent_name: "",
   temperature: 0.4,
   description: "",
@@ -41,9 +47,8 @@ const INITIAL: FormData = {
 
 const STEPS = [
   { key: 1, label: "Tu negocio", icon: "🏢" },
-  { key: 2, label: "Sobre ti", icon: "👤" },
-  { key: 3, label: "Verificación", icon: "🔐" },
-  { key: 4, label: "Tu agente", icon: "🤖" },
+  { key: 2, label: "Tu cuenta", icon: "👤" },
+  { key: 3, label: "Tu agente", icon: "🤖" },
 ];
 
 export function RegistroWizard() {
@@ -85,12 +90,23 @@ export function RegistroWizard() {
   }
 
   const canNext1 = data.industry && data.business_name.trim().length >= 2 && data.city.trim().length >= 2;
-  const canNext2 = data.owner_name.trim().length >= 2 && data.owner_email.includes("@");
+  const canNext2 =
+    data.first_name.trim().length >= 2 &&
+    data.last_name.trim().length >= 2 &&
+    data.owner_email.includes("@") &&
+    data.owner_email.includes(".") &&
+    data.password.length >= 8 &&
+    data.password === data.password_confirm;
   const needsGenPrompt = data.industry === "custom";
   const canSubmit =
     data.agent_name.trim().length >= 2 &&
     !loading &&
     (!needsGenPrompt || data.generated_prompt.trim().length > 50);
+
+  // Live password validation hints
+  const passwordTooShort = data.password.length > 0 && data.password.length < 8;
+  const passwordMismatch =
+    data.password_confirm.length > 0 && data.password !== data.password_confirm;
 
   // OTP state
   const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
@@ -231,35 +247,79 @@ export function RegistroWizard() {
     }
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setError(null);
+    setLoading(true);
 
-    const payload: Record<string, unknown> = { ...data };
+    const owner_name = `${data.first_name} ${data.last_name}`.trim();
+
+    // 1) Register the user (creates account + sets session cookie)
+    try {
+      const regRes = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: data.owner_email.trim().toLowerCase(),
+          phone: data.owner_phone.trim(),
+          first_name: data.first_name.trim(),
+          last_name: data.last_name.trim(),
+          password: data.password,
+        }),
+      });
+      const regData = await regRes.json().catch(() => ({}));
+      if (!regRes.ok || regData.status !== "ok") {
+        // already_registered → push them to login
+        if (regData.code === "already_registered") {
+          setError(
+            "Este correo ya está registrado. Ve a 'Iniciar sesión' para entrar.",
+          );
+          setLoading(false);
+          return;
+        }
+        setError(regData.message ?? "No se pudo crear la cuenta");
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError("Error de red al crear la cuenta");
+      setLoading(false);
+      return;
+    }
+
+    // 2) Stash payload + nav to /exito which will create the agent in background
+    const payload: Record<string, unknown> = {
+      industry: data.industry,
+      business_name: data.business_name,
+      city: data.city,
+      owner_name,
+      owner_email: data.owner_email.trim().toLowerCase(),
+      owner_phone: data.owner_phone.trim(),
+      agent_name: data.agent_name,
+      temperature: data.temperature,
+    };
     if (data.industry === "custom" && data.generated_prompt) {
       payload.general_prompt_override = data.generated_prompt;
       payload.begin_message_override = data.generated_greeting;
     }
 
-    // Persist what we already know so /exito can render the success card
-    // immediately with the user's name, business, etc. agent_id arrives later.
     try {
       localStorage.setItem(
         "sofia_session",
         JSON.stringify({
           business_name: data.business_name,
           industry: data.industry,
-          owner_name: data.owner_name,
+          owner_name,
           owner_email: data.owner_email,
           agent_name: data.agent_name,
           created_at: new Date().toISOString(),
         }),
       );
-      // Stash the payload so /exito can fire the actual onboarding
-      sessionStorage.setItem("sofia_pending_onboarding", JSON.stringify(payload));
+      sessionStorage.setItem(
+        "sofia_pending_onboarding",
+        JSON.stringify(payload),
+      );
     } catch {}
 
-    // Navigate INSTANTLY. The success page does the heavy creation
-    // in background and shows animated progress while waiting.
     router.push("/onboarding/exito?creating=1");
   }
 
@@ -377,40 +437,59 @@ export function RegistroWizard() {
         </div>
       )}
 
-      {/* Step 2: Owner */}
+      {/* Step 2: Tu cuenta */}
       {step === 2 && (
         <div className="space-y-6">
           <div>
             <h2 className="font-heading text-3xl font-bold italic tracking-tight">
-              Tus datos
+              Crea tu cuenta
             </h2>
             <p className="mt-2 text-sm text-neutral-400">
-              Para poder contactarte cuando algo importante pase con tus leads.
+              Con esto podrás iniciar sesión después con tu correo o teléfono.
             </p>
           </div>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="owner_name" className="text-sm text-neutral-300">
-                Tu nombre
-              </Label>
-              <input
-                id="owner_name"
-                type="text"
-                value={data.owner_name}
-                onChange={(e) => update("owner_name", e.target.value)}
-                placeholder="Juan Pérez"
-                className="w-full rounded-md bg-white/[0.04] border border-white/[0.08] px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              />
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="first_name" className="text-sm text-neutral-300">
+                  Nombre *
+                </Label>
+                <input
+                  id="first_name"
+                  type="text"
+                  autoComplete="given-name"
+                  value={data.first_name}
+                  onChange={(e) => update("first_name", e.target.value)}
+                  placeholder="Juan"
+                  className="w-full rounded-md bg-white/[0.04] border border-white/[0.08] px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="last_name" className="text-sm text-neutral-300">
+                  Apellido *
+                </Label>
+                <input
+                  id="last_name"
+                  type="text"
+                  autoComplete="family-name"
+                  value={data.last_name}
+                  onChange={(e) => update("last_name", e.target.value)}
+                  placeholder="Pérez"
+                  className="w-full rounded-md bg-white/[0.04] border border-white/[0.08] px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                />
+              </div>
             </div>
+
             <div className="grid md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="owner_email" className="text-sm text-neutral-300">
-                  Email
+                  Correo *
                 </Label>
                 <input
                   id="owner_email"
                   type="email"
+                  autoComplete="email"
                   value={data.owner_email}
                   onChange={(e) => update("owner_email", e.target.value)}
                   placeholder="juan@minegocio.com"
@@ -419,11 +498,12 @@ export function RegistroWizard() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="owner_phone" className="text-sm text-neutral-300">
-                  Teléfono (opcional)
+                  Teléfono *
                 </Label>
                 <input
                   id="owner_phone"
                   type="tel"
+                  autoComplete="tel"
                   value={data.owner_phone}
                   onChange={(e) => update("owner_phone", e.target.value)}
                   placeholder="+573001234567"
@@ -431,6 +511,65 @@ export function RegistroWizard() {
                 />
               </div>
             </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm text-neutral-300">
+                  Contraseña *
+                </Label>
+                <input
+                  id="password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={data.password}
+                  onChange={(e) => update("password", e.target.value)}
+                  placeholder="Mínimo 8 caracteres"
+                  className={`w-full rounded-md bg-white/[0.04] border px-3 py-2 text-sm outline-none focus:border-amber-400/50 ${
+                    passwordTooShort
+                      ? "border-red-500/40"
+                      : "border-white/[0.08]"
+                  }`}
+                />
+                {passwordTooShort && (
+                  <p className="text-[11px] text-red-400">
+                    Debe tener al menos 8 caracteres
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label
+                  htmlFor="password_confirm"
+                  className="text-sm text-neutral-300"
+                >
+                  Confirma contraseña *
+                </Label>
+                <input
+                  id="password_confirm"
+                  type="password"
+                  autoComplete="new-password"
+                  value={data.password_confirm}
+                  onChange={(e) => update("password_confirm", e.target.value)}
+                  placeholder="Repite la contraseña"
+                  className={`w-full rounded-md bg-white/[0.04] border px-3 py-2 text-sm outline-none focus:border-amber-400/50 ${
+                    passwordMismatch
+                      ? "border-red-500/40"
+                      : "border-white/[0.08]"
+                  }`}
+                />
+                {passwordMismatch && (
+                  <p className="text-[11px] text-red-400">
+                    Las contraseñas no coinciden
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-neutral-500">
+              ¿Ya tienes cuenta?{" "}
+              <a href="/login" className="text-amber-400 hover:underline">
+                Inicia sesión
+              </a>
+            </p>
           </div>
 
           <div className="flex justify-between pt-4">
@@ -442,12 +581,7 @@ export function RegistroWizard() {
               ← Atrás
             </Button>
             <Button
-              onClick={async () => {
-                if (!canNext2) return;
-                // Move to OTP step optimistically; request the code in parallel
-                setStep(3);
-                if (!otpRequested) requestOtp();
-              }}
+              onClick={() => setStep(3)}
               disabled={!canNext2}
               className="bg-amber-400 text-black hover:bg-amber-300 font-medium px-8 disabled:opacity-40"
             >
@@ -457,8 +591,9 @@ export function RegistroWizard() {
         </div>
       )}
 
-      {/* Step 3: OTP verification */}
-      {step === 3 && (
+      {/* OTP step removed — now using password auth instead. Kept code for now in
+          case we want to bring it back as an optional second factor later. */}
+      {false && step === -999 && (
         <div className="space-y-6">
           <div>
             <h2 className="font-heading text-3xl font-bold italic tracking-tight">
@@ -560,8 +695,8 @@ export function RegistroWizard() {
         </div>
       )}
 
-      {/* Step 4: Agent */}
-      {step === 4 && (
+      {/* Step 3: Agent */}
+      {step === 3 && (
         <div className="space-y-6">
           <div>
             <h2 className="font-heading text-3xl font-bold italic tracking-tight">
@@ -690,7 +825,8 @@ export function RegistroWizard() {
                   <span className="text-neutral-500">Negocio:</span> {data.business_name} ({data.city})
                 </p>
                 <p>
-                  <span className="text-neutral-500">Contacto:</span> {data.owner_name} — {data.owner_email}
+                  <span className="text-neutral-500">Contacto:</span>{" "}
+                  {`${data.first_name} ${data.last_name}`.trim()} — {data.owner_email}
                 </p>
                 <p>
                   <span className="text-neutral-500">Agente:</span> {data.agent_name || "—"} (voz cartesia-Sofia, es-419)
@@ -707,7 +843,7 @@ export function RegistroWizard() {
 
           <div className="flex justify-between pt-4">
             <Button
-              onClick={() => setStep(3)}
+              onClick={() => setStep(2)}
               variant="outline"
               disabled={loading}
               className="border-white/[0.08] text-neutral-300 hover:bg-white/[0.04]"

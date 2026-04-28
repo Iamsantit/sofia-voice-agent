@@ -18,6 +18,7 @@ image = (
         "python-dotenv>=1.0.0",
         "fastapi>=0.115.0",
         "pyjwt>=2.8.0",
+        "bcrypt>=4.1.0",
     )
     # Modal v1+ requires local Python source to be added explicitly. Without
     # this the container cannot import `app.*` and every endpoint fails with
@@ -485,6 +486,104 @@ def admin_retell_delete_number(phone_number: str):
 
 
 # ── Auth: OTP + JWT session ────────────────────────────────────────────────
+
+
+# ── Password-based auth (new) ───────────────────────────────────────────────
+
+
+@web_app.post("/auth/register")
+def auth_register(request: dict):
+    """Create a new account with email + password.
+
+    Body: {email, phone, first_name, last_name, password}
+    Returns: {status: ok, user: {email, phone, first_name, last_name}}
+            or {status: error, code: <reason>, message: <human readable>}
+    """
+    from app.auth.users import create_user, public_user
+
+    email = (request.get("email") or "").strip().lower()
+    phone = (request.get("phone") or "").strip()
+    first_name = (request.get("first_name") or "").strip()
+    last_name = (request.get("last_name") or "").strip()
+    password = request.get("password") or ""
+
+    try:
+        user = create_user(
+            email=email,
+            phone=phone,
+            first_name=first_name,
+            last_name=last_name,
+            password=password,
+        )
+        log.info(Phase.SYSTEM, "auth.register.ok", data={"email": email})
+        return {"status": "ok", "user": public_user(user)}
+    except ValueError as e:
+        code = str(e)
+        msg_map = {
+            "already_registered": "Este correo ya está registrado. Inicia sesión.",
+            "phone_in_use": "Este número ya está asociado a otra cuenta.",
+            "invalid_email": "Email inválido.",
+            "invalid_first_name": "Escribe tu nombre (mínimo 2 caracteres).",
+            "invalid_last_name": "Escribe tu apellido (mínimo 2 caracteres).",
+            "password_too_short": "La contraseña debe tener al menos 8 caracteres.",
+        }
+        return {
+            "status": "error",
+            "code": code,
+            "message": msg_map.get(code, code),
+        }
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "auth.register.fail", e, data={"email": email})
+        return {"status": "error", "message": str(e)[:200]}
+
+
+@web_app.post("/auth/login")
+def auth_login(request: dict):
+    """Verify identifier + password.
+
+    Body: {identifier: email_or_phone, password}
+    Returns: {status: ok, user: {…}} or {status: error, code, message}
+    """
+    from app.auth.users import authenticate, public_user
+
+    identifier = (request.get("identifier") or request.get("email") or "").strip()
+    password = request.get("password") or ""
+
+    user, err = authenticate(identifier, password)
+    if err == "not_registered":
+        return {
+            "status": "error",
+            "code": "not_registered",
+            "message": "Este correo o número no está registrado.",
+        }
+    if err == "wrong_password":
+        return {
+            "status": "error",
+            "code": "wrong_password",
+            "message": "Contraseña incorrecta.",
+        }
+    if err == "invalid_input":
+        return {
+            "status": "error",
+            "code": "invalid_input",
+            "message": "Faltan credenciales.",
+        }
+    if not user:
+        return {"status": "error", "message": "Error desconocido"}
+
+    log.info(Phase.SYSTEM, "auth.login.ok", data={"email": user.get("email")})
+    return {"status": "ok", "user": public_user(user)}
+
+
+@web_app.post("/auth/check-email")
+def auth_check_email(request: dict):
+    """Quick check whether an email is already registered (for the form)."""
+    from app.auth.users import email_exists
+
+    email = (request.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return {"status": "error", "message": "Email inválido"}
+    return {"status": "ok", "exists": email_exists(email)}
 
 
 @web_app.post("/auth/quick-signin")
