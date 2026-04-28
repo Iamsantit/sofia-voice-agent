@@ -1676,22 +1676,24 @@ def trigger_outbound():
 
 
 @web_app.post("/test-outbound-call")
-def test_outbound_call(request: dict):
+def test_outbound_call(request: Request, body: dict = Body(...)):
     """Llamada de prueba directa con tracking de fase completo.
 
-    Fases:
-      01 validate  — validar payload
-      02 notion_lead — crear lead en Notion
-      03 retell_dial — pedir a Retell que dispare la llamada
-      04 twilio_route — (implícito en Retell, se marca al recibir call_id)
-    Webhooks luego actualizan:
-      05 ringing, 06 answered, 07 in_progress, 08 ended, 09 analyzed
+    The agent that answers is resolved in this order:
+      1. agent_id explicitly provided in the body
+      2. Agent linked to the authenticated user (X-Sofia-User / cookie)
+      3. inbound_agent_id of the first phone number in Retell
+      4. Last resort: RETELL_OUTBOUND_AGENT_ID env var (legacy)
+    This prevents the old "Sofía Outbound — Inmobiliaria Horizontes"
+    agent from answering for users on a multi-tenant deployment.
     """
+    import os
     from app.services import notion_service, retell_service
 
-    name = (request.get("name") or "").strip()
-    phone = (request.get("phone") or "").strip()
-    interest = (request.get("interest") or "").strip()
+    name = (body.get("name") or "").strip()
+    phone = (body.get("phone") or "").strip()
+    interest = (body.get("interest") or "").strip()
+    explicit_agent_id = (body.get("agent_id") or "").strip()
 
     log.info(Phase.CALL_VALIDATE, "test_call.start", data={"name": name, "phone": phone, "interest_len": len(interest)})
 
@@ -1713,13 +1715,45 @@ def test_outbound_call(request: dict):
         log.exception(Phase.CALL_LEAD_CREATE, "notion.create_lead.fail", e, data={"name": name, "phone": phone})
         return {"status": "error", "stage": "notion", "message": str(e)}
 
-    # 03 — Disparar llamada via Retell
-    log.info(Phase.CALL_RETELL_DIAL, "retell.create_phone_call.start", data={"to": phone})
+    # 03 — Resolver qué agente debe contestar
+    agent_id = explicit_agent_id
+    if not agent_id:
+        # Try the authenticated user's linked agent
+        try:
+            email = _email_from_request(request)
+            if email:
+                from app.user_agents import get_user_agent
+                link = get_user_agent(email)
+                if link and link.get("agent_id"):
+                    agent_id = link["agent_id"]
+        except Exception:
+            pass
+    if not agent_id:
+        # Try the inbound agent on the first Retell phone number
+        try:
+            from app.admin.retell_mgmt import list_phone_numbers
+            for n in list_phone_numbers():
+                if n.get("inbound_agent_id"):
+                    agent_id = n["inbound_agent_id"]
+                    break
+        except Exception:
+            pass
+    if not agent_id:
+        # Legacy fallback
+        agent_id = os.environ.get("RETELL_OUTBOUND_AGENT_ID", "")
+
+    if not agent_id:
+        return {
+            "status": "error",
+            "stage": "retell",
+            "message": "No hay agente configurado. Crea uno en /agentes.",
+        }
+
+    log.info(Phase.CALL_RETELL_DIAL, "retell.create_phone_call.start", data={"to": phone, "agent_id": agent_id})
     try:
-        call = retell_service.create_outbound_call(
+        call = retell_service.create_phone_call(
             to_number=phone,
-            lead_name=name,
-            notas=interest or "Primer contacto — sin detalles previos",
+            agent_id=agent_id,
         )
         call_id = call["call_id"]
         log.info(Phase.CALL_RETELL_DIAL, "retell.create_phone_call.ok", call_id=call_id, data={"status": call["status"]})

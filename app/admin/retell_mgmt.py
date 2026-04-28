@@ -10,6 +10,30 @@ from app.logger import Phase, log
 
 RETELL_BASE = "https://api.retellai.com"
 
+# Phone number where live calls are transferred when the caller asks to
+# speak with a human advisor. Override per-agent later if needed.
+HUMAN_ADVISOR_NUMBER = "+573143783847"
+
+
+def build_transfer_tool(advisor_number: str = HUMAN_ADVISOR_NUMBER) -> dict:
+    """Standard transfer_call tool that hands the live call to a human."""
+    return {
+        "type": "transfer_call",
+        "name": "transfer_to_advisor",
+        "description": (
+            "Transfiere la llamada a un asesor humano cuando el cliente lo "
+            "solicita explícitamente (frases como 'quiero hablar con una "
+            "persona', 'pásame con un asesor', 'necesito hablar con alguien', "
+            "etc.). Antes de transferir, dile algo breve como: 'Claro, te "
+            "comunico con un asesor, un momento por favor.'"
+        ),
+        "transfer_destination": {
+            "type": "predefined",
+            "number": advisor_number,
+        },
+        "transfer_option": {"type": "cold_transfer"},
+    }
+
 
 def _headers() -> dict:
     return {
@@ -94,12 +118,28 @@ def create_agent_simple(
     webhook_url: str | None = None,
     timezone: str = "America/Mexico_City",
 ) -> dict:
-    """Create an agent end-to-end: LLM + Agent in two API calls."""
+    """Create an agent end-to-end: LLM + Agent in two API calls.
+
+    The LLM is created with a transfer_to_advisor tool so the agent can
+    hand the call to a human when the caller asks. The phone number used
+    is HUMAN_ADVISOR_NUMBER (defined above).
+    """
+    transfer_hint = (
+        "\n\n## Si el cliente pide hablar con un humano\n"
+        "Cuando el cliente pida explícitamente hablar con un asesor "
+        "humano, una persona, alguien real, etc., usa la función "
+        "`transfer_to_advisor` para transferir la llamada. Antes de "
+        "transferir, di algo breve como: 'Claro, te comunico con un "
+        "asesor, un momento por favor.'"
+    )
+    full_prompt = general_prompt.rstrip() + transfer_hint
+
     llm_code, llm = _req("POST", "/create-retell-llm", {
         "model": model,
         "begin_message": begin_message,
-        "general_prompt": general_prompt,
+        "general_prompt": full_prompt,
         "model_temperature": temperature,
+        "general_tools": [build_transfer_tool()],
     })
     if llm_code not in (200, 201):
         raise RuntimeError(f"create_retell_llm HTTP {llm_code}: {llm}")
