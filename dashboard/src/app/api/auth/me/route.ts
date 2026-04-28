@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { getSessionEmail } from "@/lib/jwt";
 
+/**
+ * Returns the current user's email if their cookie is valid.
+ * Resolves locally — no Modal round-trip required.
+ */
 export async function GET() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("sofia_session")?.value;
-
-  if (!token) {
+  const email = await getSessionEmail();
+  if (!email) {
     return NextResponse.json({ status: "anonymous" });
   }
-
-  const res = await fetch(`${process.env.MODAL_BASE_URL}/auth/me`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  const data = await res.json();
-  return NextResponse.json(data);
+  return NextResponse.json({ status: "ok", email });
 }

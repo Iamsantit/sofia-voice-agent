@@ -1,18 +1,27 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { getSessionEmail } from "@/lib/jwt";
 
 export async function GET() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("sofia_session")?.value;
-  if (!token) return NextResponse.json({ status: "unauthenticated" }, { status: 401 });
+  const email = await getSessionEmail();
+  if (!email)
+    return NextResponse.json(
+      { status: "unauthenticated" },
+      { status: 401 },
+    );
 
-  const res = await fetch(`${process.env.MODAL_BASE_URL}/admin/my-agent`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+  const res = await fetch(
+    `${process.env.MODAL_BASE_URL}/admin/my-agent?email=${encodeURIComponent(email)}`,
+    {
+      headers: { "X-Sofia-User": email },
+      cache: "no-store",
+    },
+  );
   const data = await res.json();
   if (data.status !== "ok" || !data.llm) {
-    return NextResponse.json({ status: data.status ?? "error" }, { status: 404 });
+    return NextResponse.json(
+      { status: data.status ?? "error" },
+      { status: 404 },
+    );
   }
   return NextResponse.json({
     beginMessage: data.llm.begin_message ?? "",
@@ -23,24 +32,33 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("sofia_session")?.value;
-  if (!token) return NextResponse.json({ status: "unauthenticated" }, { status: 401 });
+  const email = await getSessionEmail();
+  if (!email)
+    return NextResponse.json(
+      { status: "unauthenticated" },
+      { status: 401 },
+    );
 
   const body = await request.json();
   const payload: Record<string, unknown> = {};
-  if (body.beginMessage !== undefined) payload.begin_message = body.beginMessage;
-  if (body.generalPrompt !== undefined) payload.general_prompt = body.generalPrompt;
-  if (body.modelTemperature !== undefined) payload.model_temperature = body.modelTemperature;
+  if (body.beginMessage !== undefined)
+    payload.begin_message = body.beginMessage;
+  if (body.generalPrompt !== undefined)
+    payload.general_prompt = body.generalPrompt;
+  if (body.modelTemperature !== undefined)
+    payload.model_temperature = body.modelTemperature;
 
-  const res = await fetch(`${process.env.MODAL_BASE_URL}/admin/my-agent/llm`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+  const res = await fetch(
+    `${process.env.MODAL_BASE_URL}/admin/my-agent/llm?email=${encodeURIComponent(email)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Sofia-User": email,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+  );
   const data = await res.json();
   return NextResponse.json(data, { status: res.ok ? 200 : res.status });
 }

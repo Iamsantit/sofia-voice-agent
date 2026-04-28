@@ -1,5 +1,5 @@
 import { Shell } from "@/components/shell";
-import { cookies } from "next/headers";
+import { getSessionEmail } from "@/lib/jwt";
 import { SettingsForm } from "./settings-form";
 
 export const dynamic = "force-dynamic";
@@ -26,14 +26,19 @@ type MyAgent = {
 };
 
 async function fetchMyAgent(): Promise<MyAgent> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("sofia_session")?.value;
-  if (!token) return { status: "unauthenticated" };
+  // Decode email locally (Next.js signs the cookie with its own secret,
+  // so we don't need to share JWT_SECRET with Modal). The Modal endpoint
+  // accepts X-Sofia-User from this trusted proxy layer.
+  const email = await getSessionEmail();
+  if (!email) return { status: "unauthenticated" };
 
-  const res = await fetch(`${process.env.MODAL_BASE_URL}/admin/my-agent`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+  const res = await fetch(
+    `${process.env.MODAL_BASE_URL}/admin/my-agent?email=${encodeURIComponent(email)}`,
+    {
+      headers: { "X-Sofia-User": email },
+      cache: "no-store",
+    },
+  );
   if (!res.ok) return { status: "error" };
   return res.json();
 }

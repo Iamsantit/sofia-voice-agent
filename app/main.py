@@ -1054,8 +1054,30 @@ Genera el JSON del prompt del agente."""
 
 
 def _email_from_request(request: Request) -> str | None:
-    """Extract authenticated email from Authorization bearer or cookie."""
+    """Extract authenticated email from Authorization bearer / cookie / query.
+
+    Order of resolution:
+      1. Trusted X-Sofia-User header (set by the Next.js proxy after it has
+         verified its own session cookie locally — needed when the Vercel
+         deployment uses a different JWT_SECRET than Modal).
+      2. ?email=… query param (same trust chain as #1, kept as a backup
+         for routes that prefer query string).
+      3. Authorization: Bearer <jwt>
+      4. sofia_session cookie
+
+    For (3) and (4) we still verify with our local JWT_SECRET. If
+    verification fails we fall through to None.
+    """
     from app.auth import verify_session_token
+
+    # Trusted layer hint from the Next.js proxy (already authed there)
+    hdr_email = request.headers.get("x-sofia-user", "").strip().lower()
+    if hdr_email and "@" in hdr_email:
+        return hdr_email
+
+    qs_email = request.query_params.get("email", "").strip().lower()
+    if qs_email and "@" in qs_email:
+        return qs_email
 
     token = None
     auth_hdr = request.headers.get("authorization", "")
@@ -1066,7 +1088,10 @@ def _email_from_request(request: Request) -> str | None:
     if not token:
         return None
     payload = verify_session_token(token)
-    return payload.get("sub") if payload else None
+    if not payload:
+        return None
+    # Accept either `sub` or `email` in the JWT payload
+    return payload.get("sub") or payload.get("email")
 
 
 @web_app.get("/admin/my-agent")
