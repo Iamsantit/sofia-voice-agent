@@ -1,5 +1,6 @@
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
+import { CopilotWidget } from "./copilot-widget";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -9,6 +10,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <Topbar />
         <div className="mx-auto max-w-6xl px-8 py-8">{children}</div>
       </main>
+      <CopilotWidget />
     </div>
   );
 }

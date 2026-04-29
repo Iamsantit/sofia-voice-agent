@@ -121,6 +121,70 @@ def create_lead(
     return {"id": page["id"], "nombre": name}
 
 
+def list_leads_sorted(limit: int = 100) -> list[dict]:
+    """List all leads sorted by creation date desc. Used by the AI copilot."""
+    db_id = os.environ["NOTION_LEADS_DB_ID"]
+    result = _post(
+        f"/databases/{db_id}/query",
+        {
+            "page_size": min(100, max(1, limit)),
+            "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+        },
+    )
+    out: list[dict] = []
+    for page in result.get("results", []):
+        props = page["properties"]
+        out.append(
+            {
+                "id": page["id"],
+                "nombre": _get_title(props.get("Nombre", {})),
+                "telefono": props.get("Teléfono", {}).get("phone_number", ""),
+                "email": props.get("Email", {}).get("email", ""),
+                "estatus": _get_select(props.get("Estatus", {})),
+                "temperatura": _get_select(props.get("Temperatura", {})),
+                "fuente": _get_select(props.get("Fuente", {})),
+                "siguienteAccion": _get_rich_text(
+                    props.get("Siguiente acción", {})
+                ),
+                "resumenIA": _get_rich_text(props.get("Resumen IA", {})),
+            }
+        )
+    return out
+
+
+def list_calls_sorted(limit: int = 100) -> list[dict]:
+    """List call records sorted by date desc. Used by the AI copilot."""
+    db_id = os.environ.get("NOTION_LLAMADAS_DB_ID")
+    if not db_id:
+        return []
+    result = _post(
+        f"/databases/{db_id}/query",
+        {
+            "page_size": min(100, max(1, limit)),
+            "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+        },
+    )
+    out: list[dict] = []
+    for page in result.get("results", []):
+        props = page["properties"]
+        out.append(
+            {
+                "id": page["id"],
+                "titulo": _get_title(props.get("Llamada", {})),
+                "tipo": _get_select(props.get("Tipo", {})),
+                "resultado": _get_select(props.get("Resultado", {})),
+                "duracion": _get_number(props.get("Duración (seg)", {})) or 0,
+                "telefono": props.get("Teléfono", {}).get("phone_number", ""),
+                "resumen": _get_rich_text(props.get("Resumen", {})),
+                "sentimiento": _get_select(props.get("Sentimiento", {})),
+                "fecha": (props.get("Fecha", {}) or {}).get("date", {}).get(
+                    "start", ""
+                ),
+            }
+        )
+    return out
+
+
 def get_pending_leads() -> list[dict]:
     """Obtiene todos los leads con estatus 'Pendiente de llamar'."""
     db_id = os.environ["NOTION_LEADS_DB_ID"]

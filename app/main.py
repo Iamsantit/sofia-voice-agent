@@ -488,6 +488,327 @@ def admin_retell_delete_number(phone_number: str):
 # ── Auth: OTP + JWT session ────────────────────────────────────────────────
 
 
+# ── AI Copilot: pregúntale a Claude sobre tu negocio ──────────────────────
+
+
+@web_app.post("/admin/copilot/chat")
+def admin_copilot_chat(request: Request, body: dict = Body(...)):
+    """Co-pilot that has access to the user's business data via tool calls.
+
+    Body: { messages: [...] }
+    Uses Claude with tools that query Notion (leads, calls) and the user's
+    agent so the dashboard can answer questions like "¿cuántos leads
+    tuvimos esta semana?" or "¿qué dijo el último lead que llamó?".
+    """
+    import os
+
+    email = _email_from_request(request) or ""
+
+    messages = body.get("messages") or []
+    if not isinstance(messages, list) or not messages:
+        return {"status": "error", "message": "messages vacío"}
+
+    # Map to Anthropic format; only user/assistant turns
+    anth_messages: list[dict] = []
+    for m in messages:
+        role = m.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        anth_messages.append({"role": role, "content": content})
+
+    if not anth_messages or anth_messages[-1]["role"] != "user":
+        return {"status": "error", "message": "Último mensaje debe ser del usuario"}
+
+    system = f"""Eres el co-piloto IA del dashboard de SofiaAI.
+Hablas con el dueño del negocio (email: {email or 'desconocido'}).
+Tu trabajo es responder preguntas sobre sus llamadas, leads, agentes y métricas.
+
+Reglas:
+- Sé directo y breve. Máximo 3-4 frases.
+- Si necesitas datos reales, usa las herramientas disponibles.
+- Si no sabes algo, dilo. Nunca inventes números.
+- Habla en español neutro, tono casual pero profesional.
+- Si el usuario pregunta algo fuera del negocio (clima, código, etc), redirígelo amablemente al producto."""
+
+    tools = [
+        {
+            "name": "get_business_stats",
+            "description": "Devuelve métricas globales: total de leads, llamadas, citas agendadas, tasa de éxito, distribución de temperatura (hot/warm/cold).",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "get_recent_calls",
+            "description": "Lista las últimas N llamadas con resumen, sentimiento y resultado.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "number", "description": "Cuántas llamadas (default 5, max 20)"}
+                },
+            },
+        },
+        {
+            "name": "get_recent_leads",
+            "description": "Lista los últimos N leads con nombre, teléfono, temperatura y estado.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "number", "description": "Cuántos leads (default 5, max 20)"}
+                },
+            },
+        },
+        {
+            "name": "get_agent_info",
+            "description": "Devuelve la configuración del agente del usuario: nombre, voz, prompt, etc.",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+
+    def run_tool(name: str, args: dict) -> str:
+        import json as _json
+        try:
+            if name == "get_business_stats":
+                from app.services.notion_service import (
+                    list_calls_sorted,
+                    list_leads_sorted,
+                )
+                leads = list_leads_sorted()
+                calls = list_calls_sorted()
+                hot = sum(1 for l in leads if l.get("temperatura") == "Hot")
+                warm = sum(1 for l in leads if l.get("temperatura") == "Warm")
+                cold = sum(1 for l in leads if l.get("temperatura") == "Cold")
+                contestadas = sum(1 for c in calls if c.get("resultado") == "Contestada")
+                citas = sum(1 for l in leads if l.get("estatus") == "Cita agendada")
+                return _json.dumps({
+                    "total_leads": len(leads),
+                    "total_calls": len(calls),
+                    "contestadas": contestadas,
+                    "citas_agendadas": citas,
+                    "tasa_exito_pct": round(100 * contestadas / max(len(calls), 1)),
+                    "hot": hot, "warm": warm, "cold": cold,
+                })
+            if name == "get_recent_calls":
+                from app.services.notion_service import list_calls_sorted
+                limit = min(20, int(args.get("limit") or 5))
+                calls = list_calls_sorted()[:limit]
+                return _json.dumps([
+                    {
+                        "titulo": c.get("titulo"),
+                        "tipo": c.get("tipo"),
+                        "resultado": c.get("resultado"),
+                        "duracion_seg": c.get("duracion"),
+                        "resumen": (c.get("resumen") or "")[:300],
+                        "sentimiento": c.get("sentimiento"),
+                        "fecha": c.get("fecha"),
+                    } for c in calls
+                ])
+            if name == "get_recent_leads":
+                from app.services.notion_service import list_leads_sorted
+                limit = min(20, int(args.get("limit") or 5))
+                leads = list_leads_sorted()[:limit]
+                return _json.dumps([
+                    {
+                        "nombre": l.get("nombre"),
+                        "telefono": l.get("telefono"),
+                        "temperatura": l.get("temperatura"),
+                        "estatus": l.get("estatus"),
+                        "siguiente_accion": l.get("siguienteAccion"),
+                        "fuente": l.get("fuente"),
+                    } for l in leads
+                ])
+            if name == "get_agent_info":
+                from app.admin.retell_mgmt import get_agent, get_llm
+                from app.user_agents import get_user_agent
+                if not email:
+                    return _json.dumps({"error": "no autenticado"})
+                link = get_user_agent(email)
+                if not link:
+                    return _json.dumps({"error": "sin agente"})
+                agent = get_agent(link["agent_id"])
+                llm_id = (agent.get("response_engine") or {}).get("llm_id") or link.get("llm_id")
+                llm = get_llm(llm_id) if llm_id else {}
+                return _json.dumps({
+                    "agent_name": agent.get("agent_name"),
+                    "voice_id": agent.get("voice_id"),
+                    "language": agent.get("language"),
+                    "begin_message": llm.get("begin_message"),
+                    "general_prompt_preview": (llm.get("general_prompt") or "")[:800],
+                    "model": llm.get("model"),
+                    "temperature": llm.get("model_temperature"),
+                })
+            return _json.dumps({"error": f"herramienta desconocida: {name}"})
+        except Exception as e:
+            log.exception(Phase.SYSTEM, f"copilot.tool.{name}.fail", e)
+            return _json.dumps({"error": str(e)[:200]})
+
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+        # Tool-use loop, max 4 iterations
+        for _ in range(4):
+            resp = client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=600,
+                system=system,
+                tools=tools,
+                messages=anth_messages,
+            )
+            if resp.stop_reason == "tool_use":
+                # Execute tools and append the results
+                tool_uses = [b for b in resp.content if b.type == "tool_use"]
+                anth_messages.append({"role": "assistant", "content": resp.content})
+                tool_results = []
+                for tu in tool_uses:
+                    result = run_tool(tu.name, tu.input or {})
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": result,
+                    })
+                anth_messages.append({"role": "user", "content": tool_results})
+                continue
+
+            # End of turn
+            text_blocks = [b for b in resp.content if hasattr(b, "text")]
+            reply = "".join(b.text for b in text_blocks).strip()
+            return {"status": "ok", "reply": reply}
+
+        return {
+            "status": "ok",
+            "reply": "Llegué al límite de pasos para responderte. Intenta una pregunta más simple.",
+        }
+    except Exception as e:
+        log.exception(Phase.ANTHROPIC, "copilot.chat.fail", e)
+        return {"status": "error", "message": f"Claude falló: {e}"}
+
+
+# ── Playground: chatear con tu agente sin llamarlo ─────────────────────────
+
+
+@web_app.post("/admin/playground/chat")
+def admin_playground_chat(request: Request, body: dict = Body(...)):
+    """Send a message to the user's agent in text mode.
+
+    Body: {
+      messages: [{role: "user"|"assistant", content: str}, …],
+      agent_id?: str (optional override),
+    }
+    Uses the agent's general_prompt as system and Claude as the LLM.
+    Returns: {status:"ok", reply: str, tool_calls: [{name, …}] }
+    """
+    import os
+
+    from app.admin.retell_mgmt import get_agent, get_llm
+    from app.user_agents import get_user_agent
+
+    agent_id = (body.get("agent_id") or "").strip()
+    if not agent_id:
+        email = _email_from_request(request)
+        if email:
+            link = get_user_agent(email)
+            if link:
+                agent_id = link.get("agent_id", "")
+
+    if not agent_id:
+        return {
+            "status": "error",
+            "message": "No se encontró ningún agente. Crea uno en /agentes.",
+        }
+
+    # Resolve LLM config
+    try:
+        agent = get_agent(agent_id)
+        llm_id = (agent.get("response_engine") or {}).get("llm_id")
+        if not llm_id:
+            return {"status": "error", "message": "El agente no tiene LLM asociado."}
+        llm = get_llm(llm_id)
+    except Exception as e:
+        log.exception(Phase.RETELL, "playground.fetch_agent.fail", e)
+        return {"status": "error", "message": f"No se pudo cargar el agente: {e}"}
+
+    system_prompt = (
+        llm.get("general_prompt")
+        or "Eres un asistente profesional. Responde con cortesía y claridad."
+    )
+    begin_message = llm.get("begin_message") or ""
+    temperature = float(llm.get("model_temperature") or 0.4)
+
+    messages = body.get("messages") or []
+    if not isinstance(messages, list):
+        messages = []
+
+    # Map to Anthropic format. Inject the begin_message as the first
+    # assistant turn if the conversation is empty so the user sees the
+    # same greeting the phone caller would hear.
+    anth_messages: list[dict] = []
+    if not any(m.get("role") == "assistant" for m in messages) and begin_message:
+        anth_messages.append({"role": "assistant", "content": begin_message})
+    for m in messages:
+        role = m.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        anth_messages.append({"role": role, "content": content})
+
+    if not anth_messages or anth_messages[-1]["role"] != "user":
+        return {
+            "status": "error",
+            "message": "El último mensaje debe ser del usuario.",
+        }
+
+    # Tag the system prompt so the model knows this is a text-mode
+    # rehearsal of a phone agent — keeps it concise and prevents very
+    # long monologues that wouldn't fit in a real call.
+    system_full = (
+        system_prompt
+        + "\n\n## Contexto de este modo\n"
+        + "Estás siendo probado en modo texto antes de hacer una llamada real. "
+        + "Responde de forma corta y natural, como si estuvieras hablando por "
+        + "teléfono — frases breves, sin viñetas ni listas a menos que el "
+        + "usuario lo pida explícitamente. Si el usuario pide hablar con un "
+        + "asesor humano, responde diciendo 'Te transfiero con un asesor' (en "
+        + "una llamada real esto activaría la transferencia automática)."
+    )
+
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        resp = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=400,
+            temperature=temperature,
+            system=system_full,
+            messages=anth_messages,
+        )
+        reply = "".join(
+            b.text for b in resp.content if hasattr(b, "text")
+        ).strip()
+        log.info(
+            Phase.ANTHROPIC,
+            "playground.reply.ok",
+            data={
+                "agent_id": agent_id,
+                "msg_count": len(anth_messages),
+                "reply_len": len(reply),
+            },
+        )
+        return {
+            "status": "ok",
+            "reply": reply,
+            "begin_message": begin_message if len(anth_messages) <= 1 else None,
+        }
+    except Exception as e:
+        log.exception(Phase.ANTHROPIC, "playground.reply.fail", e)
+        return {"status": "error", "message": f"Claude falló: {e}"}
+
+
 # ── Password-based auth (new) ───────────────────────────────────────────────
 
 

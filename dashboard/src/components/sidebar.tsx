@@ -22,6 +22,7 @@ const nav: NavItem[] = [
   // Operación
   { href: "/dashboard", label: "Overview", icon: "📊" },
   { href: "/agentes", label: "Agentes", icon: "🤖" },
+  { href: "/playground", label: "Playground", icon: "💬" },
   { href: "/voces", label: "Voz", icon: "🎙️" },
   { href: "/numeros", label: "Números", icon: "#" },
   { href: "/llamadas", label: "Llamadas", icon: "📞" },
