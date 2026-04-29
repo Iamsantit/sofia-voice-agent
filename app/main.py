@@ -447,19 +447,53 @@ def admin_search_numbers(
 
 
 @web_app.post("/admin/phone-numbers/buy")
-def admin_buy_number(request: dict):
+def admin_buy_number(request: Request, body: dict = Body(...)):
     from app.admin import twilio_mgmt
+    from app.admin.identity_verification import is_verified_for_purchase
+    from app.billing import get_plan, can_buy_phone_number
+
+    # Resolve the user
+    email = _email_from_request(request)
+
+    # Plan-based enforcement (max numbers + KYC requirement for non-Plus)
+    if email:
+        try:
+            current_count = len(twilio_mgmt.list_numbers())
+            ok, reason = can_buy_phone_number(email, current_count)
+            if not ok:
+                return {
+                    "status": "error",
+                    "code": "plan_limit",
+                    "message": reason,
+                }
+        except Exception:
+            pass
+
+        try:
+            plan = get_plan(email)
+            if _kyc_required_for_plan(plan.key):
+                ok, reason = is_verified_for_purchase(email)
+                if not ok:
+                    return {
+                        "status": "error",
+                        "code": "kyc_required",
+                        "message": reason,
+                    }
+        except Exception as e:
+            log.exception(Phase.SYSTEM, "kyc.gate.fail", e)
+            return {"status": "error", "message": "Error verificando identidad"}
+
     try:
         result = twilio_mgmt.buy_number(
-            phone_number=request["phone_number"],
-            friendly_name=request.get("friendly_name", "Sofia"),
+            phone_number=body["phone_number"],
+            friendly_name=body.get("friendly_name", "Sofia"),
         )
         # Optionally: associate to trunk if trunk_sid provided
-        if request.get("trunk_sid"):
-            twilio_mgmt.associate_number_to_trunk(request["trunk_sid"], result["sid"])
+        if body.get("trunk_sid"):
+            twilio_mgmt.associate_number_to_trunk(body["trunk_sid"], result["sid"])
         return {"status": "ok", **result}
     except Exception as e:
-        log.exception(Phase.TWILIO, "admin.numbers.buy.fail", e, data=request)
+        log.exception(Phase.TWILIO, "admin.numbers.buy.fail", e, data=body)
         return {"status": "error", "message": str(e)}
 
 
@@ -1131,6 +1165,108 @@ def admin_list_team():
     except Exception as e:
         log.exception(Phase.SYSTEM, "admin.team.list.fail", e)
         return {"status": "error", "message": str(e)}
+
+
+# ── KYC: identity verification before buying a number ──────────────────────
+
+
+def _kyc_required_for_plan(plan_key: str) -> bool:
+    """Basic and Pro require KYC. Plus is exempt (paying users)."""
+    return plan_key in ("basic", "pro")
+
+
+@web_app.get("/admin/kyc/status")
+def admin_kyc_status(request: Request):
+    from app.admin.identity_verification import get_status
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+    rec = get_status(email)
+    if not rec:
+        return {"status": "ok", "kyc": None, "stage": "not_started"}
+    # Hide noisy/sensitive bits
+    safe = {
+        "stage": rec.get("stage"),
+        "personal": rec.get("personal"),
+        "phone_verified": rec.get("phone_verified"),
+        "lookup": rec.get("lookup"),
+        "ai_analysis": rec.get("ai_analysis"),
+        "updated_at": rec.get("updated_at"),
+    }
+    return {"status": "ok", "kyc": safe, "stage": rec.get("stage")}
+
+
+@web_app.post("/admin/kyc/personal")
+def admin_kyc_personal(request: Request, body: dict = Body(...)):
+    from app.admin.identity_verification import submit_personal_data
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+    try:
+        rec = submit_personal_data(email, body)
+        return {"status": "ok", "stage": rec.get("stage")}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "kyc.personal.fail", e)
+        return {"status": "error", "message": str(e)[:200]}
+
+
+@web_app.post("/admin/kyc/send-phone-otp")
+def admin_kyc_send_phone_otp(request: Request, body: dict = Body(...)):
+    from app.admin.identity_verification import send_phone_otp
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+    phone = (body.get("phone") or "").strip()
+    if not phone:
+        return {"status": "error", "message": "Falta el teléfono"}
+    try:
+        result = send_phone_otp(email, phone)
+        return {"status": "ok", **result}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+
+
+@web_app.post("/admin/kyc/verify-phone-otp")
+def admin_kyc_verify_phone_otp(request: Request, body: dict = Body(...)):
+    from app.admin.identity_verification import verify_phone_otp
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+    code = (body.get("code") or "").strip()
+    ok, reason = verify_phone_otp(email, code)
+    if not ok:
+        return {"status": "error", "message": reason}
+    return {"status": "ok", "stage": "phone_verified"}
+
+
+@web_app.post("/admin/kyc/analyze")
+def admin_kyc_analyze(request: Request):
+    from app.admin.identity_verification import run_full_analysis
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+    try:
+        rec = run_full_analysis(email)
+        return {
+            "status": "ok",
+            "stage": rec.get("stage"),
+            "score": (rec.get("ai_analysis") or {}).get("score"),
+            "verdict": (rec.get("ai_analysis") or {}).get("verdict"),
+            "reasons": (rec.get("ai_analysis") or {}).get("reasons", []),
+            "lookup": rec.get("lookup"),
+        }
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    except Exception as e:
+        log.exception(Phase.SYSTEM, "kyc.analyze.fail", e)
+        return {"status": "error", "message": str(e)[:200]}
 
 
 @web_app.get("/auth/invite/{token}")

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { KycDialog } from "./kyc-dialog";
 
 type TwilioNumber = {
   sid: string;
@@ -49,6 +50,10 @@ export function NumerosView() {
   const [available, setAvailable] = useState<Available[]>([]);
   const [buying, setBuying] = useState<string | null>(null);
   const [buyMsg, setBuyMsg] = useState<string | null>(null);
+
+  // KYC flow
+  const [showKyc, setShowKyc] = useState(false);
+  const [pendingBuyPhone, setPendingBuyPhone] = useState<string | null>(null);
 
   // Import flow
   const [importingFor, setImportingFor] = useState<string | null>(null);
@@ -127,6 +132,11 @@ export function NumerosView() {
         setBuyMsg(`✅ Comprado: ${data.phone_number}`);
         setAvailable([]);
         await loadAll();
+      } else if (data.code === "kyc_required") {
+        // Trigger KYC flow first, then come back and finish the buy
+        setBuyMsg(null);
+        setPendingBuyPhone(phone);
+        setShowKyc(true);
       } else {
         setBuyMsg(`❌ ${data.message ?? "Error"}`);
       }
@@ -477,6 +487,24 @@ export function NumerosView() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {showKyc && (
+        <KycDialog
+          onClose={() => {
+            setShowKyc(false);
+            setPendingBuyPhone(null);
+          }}
+          onApproved={() => {
+            setShowKyc(false);
+            // Resume the purchase that was blocked
+            if (pendingBuyPhone) {
+              const p = pendingBuyPhone;
+              setPendingBuyPhone(null);
+              handleBuy(p);
+            }
+          }}
+        />
       )}
     </div>
   );
