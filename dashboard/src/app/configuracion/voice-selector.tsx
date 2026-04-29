@@ -124,7 +124,8 @@ export function VoiceSelector() {
       <CardHeader>
         <CardTitle className="font-heading text-lg italic">Voz del agente</CardTitle>
         <p className="text-xs text-neutral-500">
-          Cambia la voz con la que tu agente habla por teléfono.
+          Cambia la voz con la que tu agente habla por teléfono. El cambio se
+          aplica a la <strong>siguiente llamada</strong>.
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
