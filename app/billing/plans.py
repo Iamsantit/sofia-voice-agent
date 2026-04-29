@@ -67,16 +67,17 @@ PLANS: dict[PlanKey, Plan] = {
     "pro": Plan(
         key="pro",
         name="Pro",
-        monthly_price_usd=29,
-        annual_price_usd=19 * 12,  # $228/yr, 35% off vs monthly
-        minutes_included=500,
-        max_agents=2,
-        max_phone_numbers=1,
+        monthly_price_usd=99,
+        annual_price_usd=79 * 12,  # $948/yr, 20% off vs monthly
+        minutes_included=1500,
+        max_agents=3,
+        max_phone_numbers=2,
         integrations=(
             "custom-webhook",
             "google-calendar",
             "whatsapp",
             "zapier",
+            "make",
         ),
         can_clone_voice=False,
         has_priority_support=True,
@@ -84,11 +85,11 @@ PLANS: dict[PlanKey, Plan] = {
     "plus": Plan(
         key="plus",
         name="Plus",
-        monthly_price_usd=79,
-        annual_price_usd=59 * 12,  # $708/yr, 25% off vs monthly
+        monthly_price_usd=299,
+        annual_price_usd=249 * 12,  # $2,988/yr, ~17% off vs monthly
         minutes_included=UNLIMITED,
-        max_agents=10,
-        max_phone_numbers=5,
+        max_agents=15,
+        max_phone_numbers=10,
         integrations=(
             "custom-webhook",
             "google-calendar",
