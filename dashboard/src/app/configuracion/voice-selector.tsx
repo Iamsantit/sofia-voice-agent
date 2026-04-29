@@ -40,15 +40,24 @@ export function VoiceSelector() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [v, a] = await Promise.all([
+      // Use /api/my-agent so we always edit the SAME agent that's
+      // bound to the user's phone — never one of the legacy duplicates.
+      const [v, mine] = await Promise.all([
         fetch("/api/voices", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/agents", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/my-agent", { cache: "no-store" }).then((r) => r.json()),
       ]);
       setVoices(v.voices ?? []);
-      setAgents(a.agents ?? []);
-      if (a.agents?.[0]) {
-        setSelectedAgentId(a.agents[0].agent_id);
-        setSelectedVoiceId(a.agents[0].voice_id ?? "");
+      if (mine.status === "ok" && mine.link?.agent_id) {
+        const a: Agent = {
+          agent_id: mine.link.agent_id,
+          name: mine.agent?.agent_name ?? mine.link.agent_name ?? "Mi agente",
+          voice_id: mine.agent?.voice_id ?? "",
+        };
+        setAgents([a]);
+        setSelectedAgentId(a.agent_id);
+        setSelectedVoiceId(a.voice_id);
+      } else {
+        setAgents([]);
       }
     } finally {
       setLoading(false);

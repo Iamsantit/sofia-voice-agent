@@ -240,10 +240,30 @@ def post_call_summary(request: dict):
 
 
 @web_app.get("/admin/agents")
-def admin_list_agents():
+def admin_list_agents(request: Request):
+    """List agents.
+
+    If a user is authenticated (X-Sofia-User / cookie / bearer JWT) we
+    return only the agent linked to their account so the dashboard
+    never shows leftover or other-tenant agents. If no auth context is
+    present (admin curl), we return everything.
+    """
     from app.admin.retell_mgmt import list_agents
+    from app.user_agents import get_user_agent
+
     try:
-        return {"status": "ok", "agents": list_agents()}
+        all_agents = list_agents()
+        email = _email_from_request(request)
+        if email:
+            link = get_user_agent(email)
+            if link and link.get("agent_id"):
+                aid = link["agent_id"]
+                mine = [a for a in all_agents if a.get("agent_id") == aid]
+                return {"status": "ok", "agents": mine}
+            # User has no link yet — return empty so the UI prompts
+            # them to create one
+            return {"status": "ok", "agents": []}
+        return {"status": "ok", "agents": all_agents}
     except Exception as e:
         log.exception(Phase.RETELL, "admin.agents.list.fail", e)
         return {"status": "error", "message": str(e)}
@@ -1845,8 +1865,14 @@ def admin_onboarding(request: dict):
         "general_prompt_override": "..."   // optional
       }
     """
-    from app.admin.retell_mgmt import create_agent_simple
+    from app.admin.retell_mgmt import (
+        create_agent_simple,
+        get_agent,
+        update_agent,
+        update_llm,
+    )
     from app.industries import get_template, render_template
+    from app.user_agents import get_user_agent
     import os
 
     industry = request.get("industry", "otro")
@@ -1884,6 +1910,62 @@ def admin_onboarding(request: dict):
         "business": business_name,
         "agent_name": agent_name,
     })
+
+    # ── Dedup: if this email already has a linked agent, REUSE it.
+    # Update its prompt/voice/name to reflect the latest onboarding answers
+    # instead of creating yet another copy. Prevents the "I have 4 Carlos
+    # — Cabrejo agents" problem on repeat signups.
+    owner_email = (request.get("owner_email") or "").strip().lower()
+    if owner_email:
+        existing = get_user_agent(owner_email)
+        if existing and existing.get("agent_id"):
+            try:
+                eid = existing["agent_id"]
+                # Verify the agent still exists in Retell
+                ag = get_agent(eid)
+                llm_id = (ag.get("response_engine") or {}).get("llm_id") or existing.get("llm_id")
+                update_agent(eid, {
+                    "agent_name": f"{agent_name} — {business_name}",
+                    "voice_id": template["voice_id"],
+                    "language": template["language"],
+                })
+                if llm_id:
+                    update_llm(llm_id, {
+                        "general_prompt": general_prompt,
+                        "begin_message": begin_message,
+                        "model_temperature": float(request.get("temperature", 0.4)),
+                    })
+                # Re-link in user_agents with the new metadata
+                from app.user_agents import link_user_to_agent
+                link_user_to_agent(
+                    email=owner_email,
+                    agent_id=eid,
+                    llm_id=llm_id or existing.get("llm_id", ""),
+                    industry=industry,
+                    business_name=business_name,
+                    city=city or "",
+                    agent_name=agent_name,
+                )
+                log.info(Phase.SYSTEM, "onboarding.reused_existing_agent", data={
+                    "email": owner_email, "agent_id": eid,
+                })
+                return {
+                    "status": "ok",
+                    "agent_id": eid,
+                    "llm_id": llm_id or existing.get("llm_id", ""),
+                    "agent_name": agent_name,
+                    "business_name": business_name,
+                    "industry": industry,
+                    "begin_message": begin_message,
+                    "reused": True,
+                }
+            except Exception as ex:
+                # Fall through to creation if the existing agent is gone
+                log.warn(
+                    Phase.SYSTEM,
+                    "onboarding.reuse_failed_falling_back",
+                    data={"email": owner_email, "reason": str(ex)[:150]},
+                )
 
     try:
         result = create_agent_simple(

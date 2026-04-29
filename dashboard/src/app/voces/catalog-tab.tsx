@@ -44,15 +44,26 @@ export function CatalogTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [v, a] = await Promise.all([
+      // Use /api/my-agent so we always operate on the user's actual
+      // phone-bound agent (no duplicates from earlier signups).
+      const [v, mine] = await Promise.all([
         fetch("/api/voices", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/agents", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/my-agent", { cache: "no-store" }).then((r) => r.json()),
       ]);
       setVoices(v.voices ?? []);
-      setAgents(a.agents ?? []);
-      if (a.agents?.[0] && !selectedAgentId) {
-        setSelectedAgentId(a.agents[0].agent_id);
-        setSelectedVoiceId(a.agents[0].voice_id ?? "");
+      if (mine.status === "ok" && mine.link?.agent_id) {
+        const a: Agent = {
+          agent_id: mine.link.agent_id,
+          name: mine.agent?.agent_name ?? mine.link.agent_name ?? "Mi agente",
+          voice_id: mine.agent?.voice_id ?? "",
+        };
+        setAgents([a]);
+        if (!selectedAgentId) {
+          setSelectedAgentId(a.agent_id);
+          setSelectedVoiceId(a.voice_id);
+        }
+      } else {
+        setAgents([]);
       }
     } finally {
       setLoading(false);
@@ -114,10 +125,29 @@ export function CatalogTab() {
   const accents = Array.from(new Set(voices.map((v) => v.accent).filter(Boolean)));
   const genders = Array.from(new Set(voices.map((v) => v.gender).filter(Boolean)));
 
+  // Quick-pick presets for the most-asked Spanish accents.
+  // Each preset is a list of substrings to match against voice_name/accent.
+  const QUICK_PRESETS: Record<string, RegExp> = {
+    "🇲🇽 Mexicano": /mex|méx|mxn|spanish.*latin|es-mx/i,
+    "🇨🇴 Colombiano": /colomb/i,
+    "🇪🇸 España": /spanish|spain|castell|españ|castilian|es-es/i,
+    "🇦🇷 Argentino": /argent|rio.*plate|river.*plate/i,
+    "🌎 Latam": /latin|spanish|colomb|mex|argent|chile|peru|venez|caracas|es-419|es-/i,
+    "🇧🇷 Brasileño": /brazil|portug/i,
+  };
+  const [quickPreset, setQuickPreset] = useState<string>("");
+
   const filtered = voices.filter((v) => {
     if (filter && !v.voice_name.toLowerCase().includes(filter.toLowerCase())) return false;
     if (genderFilter && v.gender !== genderFilter) return false;
     if (accentFilter && v.accent !== accentFilter) return false;
+    if (quickPreset) {
+      const rx = QUICK_PRESETS[quickPreset];
+      if (rx) {
+        const hay = `${v.voice_name} ${v.accent ?? ""} ${v.provider ?? ""}`;
+        if (!rx.test(hay)) return false;
+      }
+    }
     return true;
   });
 
@@ -170,6 +200,39 @@ export function CatalogTab() {
             <CardTitle className="font-heading text-lg italic">
               Catálogo ({filtered.length} de {voices.length})
             </CardTitle>
+            {/* Quick presets */}
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setQuickPreset("")}
+                className={`text-xs px-3 py-1 rounded-full transition ${
+                  !quickPreset
+                    ? "bg-amber-400 text-black"
+                    : "bg-white/[0.04] text-neutral-400 hover:text-neutral-200"
+                }`}
+              >
+                Todas
+              </button>
+              {Object.keys({
+                "🇲🇽 Mexicano": 1,
+                "🇨🇴 Colombiano": 1,
+                "🇪🇸 España": 1,
+                "🇦🇷 Argentino": 1,
+                "🌎 Latam": 1,
+                "🇧🇷 Brasileño": 1,
+              }).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setQuickPreset(p === quickPreset ? "" : p)}
+                  className={`text-xs px-3 py-1 rounded-full transition ${
+                    quickPreset === p
+                      ? "bg-amber-400 text-black"
+                      : "bg-white/[0.04] text-neutral-400 hover:text-neutral-200"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
             <div className="flex flex-wrap gap-2">
               <input
                 type="text"
