@@ -1133,6 +1133,34 @@ def admin_list_team():
         return {"status": "error", "message": str(e)}
 
 
+@web_app.get("/auth/invite/{token}")
+def auth_lookup_invite(token: str):
+    """Public lookup for an invite token. Used by /registro when the
+    user lands via a shared invite link. Returns minimal info so the
+    form can pre-fill email + role."""
+    from app.admin import team
+    member = team.get_member_by_invite_token(token)
+    if not member:
+        return {"status": "error", "message": "Invitación inválida o expirada"}
+    return {
+        "status": "ok",
+        "email": member.get("email"),
+        "name": member.get("name"),
+        "role": member.get("role"),
+        "invited_by": member.get("invited_by"),
+    }
+
+
+@web_app.post("/auth/invite/{token}/accept")
+def auth_accept_invite(token: str):
+    """Mark the invite as accepted after the user finishes registering."""
+    from app.admin import team
+    member = team.mark_invite_accepted(token)
+    if not member:
+        return {"status": "error", "message": "Token inválido"}
+    return {"status": "ok"}
+
+
 @web_app.post("/admin/team")
 def admin_add_member(request: Request, body: dict = Body(...)):
     from app.admin import team

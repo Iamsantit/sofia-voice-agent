@@ -19,6 +19,7 @@ type Member = {
   status: "invited" | "active";
   created_at: string;
   invited_by?: string;
+  invite_token?: string;
 };
 
 const ROLES = [
@@ -52,8 +53,18 @@ export function EquipoView() {
   const [submitting, setSubmitting] = useState(false);
   const [inviteToast, setInviteToast] = useState<{
     text: string;
+    link?: string | null;
     kind: "success" | "warn" | "error";
   } | null>(null);
+  const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
+
+  function copyInviteLink(token: string, memberId: string) {
+    const url = `${window.location.origin}/registro?invite=${token}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedTokenId(memberId);
+      setTimeout(() => setCopiedTokenId(null), 2500);
+    });
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,23 +102,26 @@ export function EquipoView() {
       if (data.status === "ok") {
         const invite = data.invite ?? {};
         const targetEmail = data.member?.email ?? email;
+        const token = data.member?.invite_token;
+        const link = token
+          ? `${window.location.origin}/registro?invite=${token}`
+          : null;
+
         if (invite.sent && !invite.sandbox_redirect) {
           setInviteToast({
-            text: `✓ Invitación enviada a ${targetEmail}`,
+            text: `✓ Invitación enviada por correo a ${targetEmail}.`,
+            link,
             kind: "success",
           });
-        } else if (invite.sent && invite.sandbox_redirect) {
-          setInviteToast({
-            text: `Invitación redirigida al owner (Resend en sandbox). Para enviar a usuarios reales, verifica tu dominio.`,
-            kind: "warn",
-          });
         } else {
+          // Email no salió (sandbox o error) → enseñamos el link copiable
           setInviteToast({
-            text: `Miembro guardado, pero el email no salió: ${invite.error ?? "desconocido"}. Compártele el acceso manualmente.`,
+            text: `Miembro guardado. El correo no llegó (Resend en sandbox), pero te dejo el link de invitación para que se lo mandes por WhatsApp/SMS:`,
+            link,
             kind: "warn",
           });
         }
-        setTimeout(() => setInviteToast(null), 8000);
+        setTimeout(() => setInviteToast(null), 30000);
         setShowInvite(false);
         setName("");
         setEmail("");
@@ -295,6 +309,21 @@ export function EquipoView() {
                     <p className="text-[11px] text-neutral-500 truncate">{m.email}</p>
                   </div>
 
+                  {m.status === "invited" && m.invite_token && (
+                    <button
+                      type="button"
+                      onClick={() => copyInviteLink(m.invite_token!, m.id)}
+                      className={`shrink-0 rounded-md border px-3 py-1.5 text-xs transition ${
+                        copiedTokenId === m.id
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                          : "border-amber-500/30 bg-amber-500/[0.08] text-amber-300 hover:bg-amber-500/[0.15]"
+                      }`}
+                      title="Copia el link y mándalo por WhatsApp/SMS al invitado"
+                    >
+                      {copiedTokenId === m.id ? "✓ Copiado" : "📋 Copiar link"}
+                    </button>
+                  )}
+
                   {m.role !== "owner" ? (
                     <div className="flex gap-2 shrink-0">
                       <select
@@ -327,7 +356,7 @@ export function EquipoView() {
 
       {inviteToast && (
         <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur-md ${
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-xl w-[min(95vw,640px)] rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur-md ${
             inviteToast.kind === "success"
               ? "border-emerald-500/40 bg-emerald-500/[0.08] text-emerald-100"
               : inviteToast.kind === "warn"
@@ -335,7 +364,37 @@ export function EquipoView() {
                 : "border-red-500/40 bg-red-500/[0.08] text-red-100"
           }`}
         >
-          {inviteToast.text}
+          <p className="mb-2">{inviteToast.text}</p>
+          {inviteToast.link && (
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={inviteToast.link}
+                onClick={(e) => (e.target as HTMLInputElement).select()}
+                className="flex-1 rounded-md bg-black/30 border border-white/[0.1] px-3 py-1.5 text-xs font-mono outline-none"
+              />
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(inviteToast.link!);
+                  setInviteToast({
+                    ...inviteToast,
+                    text: "✓ Link copiado al portapapeles",
+                    kind: "success",
+                  });
+                  setTimeout(() => setInviteToast(null), 3000);
+                }}
+                className="rounded-md bg-amber-400 text-black hover:bg-amber-300 px-3 py-1.5 text-xs font-medium"
+              >
+                Copiar
+              </button>
+              <button
+                onClick={() => setInviteToast(null)}
+                className="rounded-md border border-white/[0.1] text-neutral-300 hover:bg-white/[0.04] px-3 py-1.5 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

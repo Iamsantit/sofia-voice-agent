@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,8 +54,16 @@ const STEPS = [
 
 export function RegistroWizard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("invite") || "";
   const [step, setStep] = useState(1);
   const [data, setData] = useState<FormData>(INITIAL);
+  const [inviteInfo, setInviteInfo] = useState<{
+    email: string;
+    name: string;
+    role: string;
+    invited_by: string;
+  } | null>(null);
   // Industries are hardcoded for instant render (no Modal cold-start wait).
   // We still refresh from backend on mount in case the catalog changes later.
   const [industries, setIndustries] = useState<Industry[]>(INDUSTRIES);
@@ -74,6 +82,38 @@ export function RegistroWizard() {
         // Silent — we already have the static fallback rendered.
       });
   }, []);
+
+  // If the user landed via an invite link, pre-fill the form and skip
+  // the "Tu negocio" step (they're joining an existing account).
+  useEffect(() => {
+    if (!inviteToken) return;
+    fetch(`/api/auth/invite/${encodeURIComponent(inviteToken)}`, {
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "ok" && d.email) {
+          setInviteInfo({
+            email: d.email,
+            name: d.name ?? "",
+            role: d.role ?? "editor",
+            invited_by: d.invited_by ?? "",
+          });
+          // Pre-fill what we know
+          const parts = String(d.name ?? "").split(/\s+/);
+          setData((prev) => ({
+            ...prev,
+            owner_email: d.email,
+            first_name: parts[0] ?? prev.first_name,
+            last_name: parts.slice(1).join(" ") || prev.last_name,
+          }));
+          // Jump straight to step 2 — they don't pick an industry,
+          // they're joining an existing account.
+          setStep(2);
+        }
+      })
+      .catch(() => {});
+  }, [inviteToken]);
 
   const selectedIndustry = industries.find((i) => i.key === data.industry);
 
@@ -335,6 +375,27 @@ export function RegistroWizard() {
           );
         })}
       </div>
+
+      {/* Invite banner */}
+      {inviteInfo && (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-4 flex items-start gap-3">
+          <span className="text-2xl">📨</span>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-100">
+              Estás aceptando una invitación de{" "}
+              <span className="text-amber-300">
+                {inviteInfo.invited_by || "tu compañero"}
+              </span>{" "}
+              como{" "}
+              <span className="text-amber-300 capitalize">{inviteInfo.role}</span>
+            </p>
+            <p className="text-[11px] text-neutral-400 mt-1">
+              Solo tienes que crear tu contraseña — no necesitas elegir
+              industria, ya estás dentro de una cuenta existente.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Step 1: Negocio */}
       {step === 1 && (
@@ -600,7 +661,21 @@ export function RegistroWizard() {
                     setLoading(false);
                     return;
                   }
-                  // 2) Move to OTP step + fire request-code (email + SMS)
+
+                  // If they're accepting an invite, mark it as accepted
+                  // and skip the agent-creation flow entirely.
+                  if (inviteToken) {
+                    try {
+                      await fetch(
+                        `/api/auth/invite/${encodeURIComponent(inviteToken)}/accept`,
+                        { method: "POST" },
+                      );
+                    } catch {}
+                    router.replace("/dashboard");
+                    return;
+                  }
+
+                  // 2) Normal flow: OTP step
                   setStep(3);
                   if (!otpRequested) requestOtp();
                 } finally {
@@ -610,7 +685,13 @@ export function RegistroWizard() {
               disabled={!canNext2 || loading}
               className="bg-amber-400 text-black hover:bg-amber-300 font-medium px-8 disabled:opacity-40"
             >
-              {loading ? "Creando cuenta…" : "Crear cuenta →"}
+              {loading
+                ? inviteToken
+                  ? "Aceptando invitación…"
+                  : "Creando cuenta…"
+                : inviteToken
+                  ? "Aceptar invitación →"
+                  : "Crear cuenta →"}
             </Button>
           </div>
         </div>

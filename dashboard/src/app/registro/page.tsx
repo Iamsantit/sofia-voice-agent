@@ -1,5 +1,9 @@
 import { RegistroWizard } from "./registro-wizard";
 import Link from "next/link";
+import { Suspense } from "react";
+
+// useSearchParams requires force-dynamic in Next 16 to avoid prerender errors
+export const dynamic = "force-dynamic";
 
 export default function RegistroPage() {
   return (
@@ -29,7 +33,9 @@ export default function RegistroPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-6 py-12">
-        <RegistroWizard />
+        <Suspense fallback={<p className="text-sm text-neutral-500">Cargando…</p>}>
+          <RegistroWizard />
+        </Suspense>
       </main>
     </div>
   );

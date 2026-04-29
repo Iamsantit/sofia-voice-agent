@@ -47,6 +47,7 @@ def add_member(name: str, email: str, role: str = "editor", invited_by: str = ""
             raise ValueError(f"Ya existe un miembro con email {email_norm}")
 
     member_id = secrets.token_urlsafe(8)
+    invite_token = secrets.token_urlsafe(24)
     member = {
         "id": member_id,
         "name": name.strip(),
@@ -55,9 +56,41 @@ def add_member(name: str, email: str, role: str = "editor", invited_by: str = ""
         "status": "invited",  # invited | active
         "created_at": _now_iso(),
         "invited_by": invited_by,
+        "invite_token": invite_token,
     }
     _team_dict[member_id] = member
     log.info(Phase.SYSTEM, "team.member.added", data={"email": email_norm, "role": role})
+    return member
+
+
+def get_member_by_invite_token(token: str) -> dict | None:
+    """Lookup a pending invite by its unique token. Used by the
+    registration page to pre-fill the form when an invitee clicks
+    the shareable invite link."""
+    if not token:
+        return None
+    try:
+        for _, m in _team_dict.items():
+            if isinstance(m, dict) and m.get("invite_token") == token:
+                return m
+    except Exception:
+        return None
+    return None
+
+
+def mark_invite_accepted(token: str) -> dict | None:
+    """Flip status to 'active' when the invitee finishes registering."""
+    member = get_member_by_invite_token(token)
+    if not member:
+        return None
+    member["status"] = "active"
+    member["accepted_at"] = _now_iso()
+    _team_dict[member["id"]] = member
+    log.info(
+        Phase.SYSTEM,
+        "team.invite.accepted",
+        data={"id": member["id"], "email": member.get("email")},
+    )
     return member
 
 
