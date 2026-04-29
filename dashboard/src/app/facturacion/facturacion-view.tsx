@@ -1,231 +1,295 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-type Stats = {
-  totalCalls: number;
-  contestadas: number;
-  avgDuration: number;
+type PlanInfo = {
+  key: "basic" | "pro" | "plus";
+  name: string;
+  monthly_price_usd: number;
+  annual_price_usd: number;
+  minutes_included: number | null;
+  is_unlimited: boolean;
+  max_agents: number;
+  max_phone_numbers: number;
+  integrations: string[];
+  can_clone_voice: boolean;
+  has_priority_support: boolean;
 };
 
-const PLAN = {
-  name: "Business",
-  monthly: 149,
-  minutesIncluded: 5000,
-  agentsIncluded: 10,
-  numbersIncluded: 10,
-  renewsAt: "2026-05-26",
+type Me = {
+  status: string;
+  email?: string;
+  plan?: PlanInfo;
+  usage?: {
+    minutes_used: number;
+    minutes_pct: number;
+    period_started_at: string;
+    period_days: number;
+  };
+};
+
+const PLAN_BLURBS: Record<string, string> = {
+  basic: "Para probar y validar tu agente.",
+  pro: "Negocios en crecimiento.",
+  plus: "Operaciones a gran escala — minutos ilimitados.",
 };
 
 export function FacturacionView() {
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
+  const [plans, setPlans] = useState<PlanInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [changing, setChanging] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/stats", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled) setStats(d);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [meRes, plansRes] = await Promise.all([
+        fetch("/api/billing/me", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/billing/plans", { cache: "no-store" }).then((r) => r.json()),
+      ]);
+      if (meRes.status === "ok") setMe(meRes);
+      if (plansRes.status === "ok") setPlans(plansRes.plans ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error de red");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const minutesUsed = stats
-    ? Math.round((stats.contestadas * stats.avgDuration) / 60)
-    : 0;
-  const minutesPct = Math.min(
-    100,
-    Math.round((minutesUsed / PLAN.minutesIncluded) * 100),
-  );
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  // Mock invoices (real Stripe integration would replace this)
-  const invoices = [
-    { id: "INV-2026-04", date: "2026-04-26", amount: PLAN.monthly, status: "paid" },
-    { id: "INV-2026-03", date: "2026-03-26", amount: PLAN.monthly, status: "paid" },
-    { id: "INV-2026-02", date: "2026-02-26", amount: PLAN.monthly, status: "paid" },
-  ];
+  async function changePlan(key: string) {
+    if (!confirm(`¿Cambiar al plan ${key.toUpperCase()}?`)) return;
+    setChanging(key);
+    setError(null);
+    try {
+      const res = await fetch("/api/billing/change-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: key }),
+      });
+      const data = await res.json();
+      if (data.status === "ok") {
+        await load();
+      } else {
+        setError(data.message ?? "No se pudo cambiar el plan");
+      }
+    } finally {
+      setChanging(null);
+    }
+  }
+
+  const currentPlanKey = me?.plan?.key ?? "basic";
 
   return (
     <div className="space-y-8">
-      {/* Plan actual */}
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/[0.04] p-4 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
+      {/* Current plan + usage */}
       <section>
         <h2 className="text-xs uppercase tracking-wider text-neutral-500 mb-3">
-          Tu plan
+          Tu plan actual
         </h2>
-        <div className="rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-400/[0.06] via-transparent to-transparent p-6">
-          <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h3 className="font-heading text-3xl font-bold italic">
-                  Plan {PLAN.name}
-                </h3>
-                <Badge
-                  variant="outline"
-                  className="border-emerald-500/40 text-emerald-300 text-[10px]"
-                >
-                  Activo
-                </Badge>
+        {loading || !me?.plan || !me.usage ? (
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] h-48 animate-pulse" />
+        ) : (
+          <div className="rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-400/[0.06] via-transparent to-transparent p-6">
+            <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <h3 className="font-heading text-3xl font-bold italic">
+                    Plan {me.plan.name}
+                  </h3>
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-500/40 text-emerald-300 text-[10px]"
+                  >
+                    Activo
+                  </Badge>
+                </div>
+                <p className="text-sm text-neutral-400">
+                  {PLAN_BLURBS[me.plan.key]}
+                </p>
               </div>
-              <p className="text-sm text-neutral-400">
-                Renueva el{" "}
-                {new Date(PLAN.renewsAt).toLocaleDateString("es-ES", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </p>
+              <div className="text-right">
+                {me.plan.monthly_price_usd === 0 ? (
+                  <p className="font-heading text-4xl font-bold italic text-neutral-100">
+                    Gratis
+                  </p>
+                ) : (
+                  <p className="font-heading text-4xl font-bold italic text-neutral-100">
+                    ${me.plan.monthly_price_usd}
+                    <span className="text-sm text-neutral-500 ml-1">/mes</span>
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="text-right">
-              <p className="font-heading text-4xl font-bold italic text-neutral-100">
-                ${PLAN.monthly}
-                <span className="text-sm text-neutral-500 ml-1">/mes</span>
-              </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <UsageBlock
+                label="Minutos este periodo"
+                used={me.usage.minutes_used}
+                total={me.plan.minutes_included}
+                pct={me.usage.minutes_pct}
+                unit=" min"
+                unlimited={me.plan.is_unlimited}
+              />
+              <UsageBlock
+                label="Agentes permitidos"
+                used={null}
+                total={me.plan.max_agents}
+                pct={0}
+                unit=""
+                hideBar
+              />
+              <UsageBlock
+                label="Números permitidos"
+                used={null}
+                total={me.plan.max_phone_numbers}
+                pct={0}
+                unit=""
+                hideBar
+              />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <UsageBlock
-              label="Minutos este mes"
-              used={minutesUsed}
-              total={PLAN.minutesIncluded}
-              pct={minutesPct}
-              suffix=" min"
-            />
-            <UsageBlock
-              label="Agentes activos"
-              used={1}
-              total={PLAN.agentsIncluded}
-              pct={Math.round((1 / PLAN.agentsIncluded) * 100)}
-            />
-            <UsageBlock
-              label="Números conectados"
-              used={1}
-              total={PLAN.numbersIncluded}
-              pct={Math.round((1 / PLAN.numbersIncluded) * 100)}
-            />
-          </div>
-
-          <div className="flex gap-3 flex-wrap pt-4 border-t border-white/[0.06]">
-            <Link
-              href="/#planes"
-              className="rounded-md bg-amber-400 text-black hover:bg-amber-300 px-4 py-2 text-sm font-medium transition"
-            >
-              Cambiar plan
-            </Link>
-            <button
-              onClick={() =>
-                alert(
-                  "Próximamente: descarga tu CSV de consumo detallado por agente.",
-                )
-              }
-              className="rounded-md border border-white/[0.1] text-neutral-300 hover:bg-white/[0.04] px-4 py-2 text-sm transition"
-            >
-              Descargar consumo
-            </button>
-            <button
-              onClick={() => {
-                if (
-                  confirm(
-                    "¿Cancelar suscripción? Mantendrás acceso hasta el final del periodo.",
-                  )
-                )
-                  alert(
-                    "Solicitud de cancelación enviada. El equipo de soporte te confirmará en 24h.",
-                  );
-              }}
-              className="rounded-md border border-red-500/20 text-red-300 hover:bg-red-500/10 px-4 py-2 text-sm transition ml-auto"
-            >
-              Cancelar suscripción
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Método de pago */}
-      <section>
-        <h2 className="text-xs uppercase tracking-wider text-neutral-500 mb-3">
-          Método de pago
-        </h2>
-        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-5 flex items-center gap-4 flex-wrap">
-          <div className="h-12 w-16 rounded-md bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-xs font-bold text-white">
-            VISA
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-mono text-neutral-100">
-              •••• •••• •••• 4242
+            <p className="text-[11px] text-neutral-500 mt-4">
+              Periodo de {me.usage.period_days} días — comenzó el{" "}
+              {new Date(me.usage.period_started_at).toLocaleDateString("es-ES", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
             </p>
-            <p className="text-[11px] text-neutral-500">Vence 12/2027</p>
           </div>
-          <Button
-            variant="outline"
-            className="border-white/[0.1] text-neutral-300"
-            onClick={() =>
-              alert(
-                "Próximamente: integración con Stripe para gestionar métodos de pago directamente.",
-              )
-            }
-          >
-            Cambiar
-          </Button>
-        </div>
+        )}
       </section>
 
-      {/* Facturas */}
+      {/* Plan selector */}
       <section>
-        <h2 className="text-xs uppercase tracking-wider text-neutral-500 mb-3">
-          Historial de facturas
-        </h2>
-        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-white/[0.02] border-b border-white/[0.06]">
-              <tr className="text-left text-[11px] uppercase tracking-wider text-neutral-500">
-                <th className="py-3 px-5">Factura</th>
-                <th className="py-3 px-5">Fecha</th>
-                <th className="py-3 px-5">Monto</th>
-                <th className="py-3 px-5">Estado</th>
-                <th className="py-3 px-5"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.04]">
-              {invoices.map((inv) => (
-                <tr key={inv.id} className="hover:bg-white/[0.02]">
-                  <td className="py-3 px-5 font-mono text-xs text-neutral-200">
-                    {inv.id}
-                  </td>
-                  <td className="py-3 px-5 text-neutral-400">
-                    {new Date(inv.date).toLocaleDateString("es-ES")}
-                  </td>
-                  <td className="py-3 px-5 text-neutral-100">
-                    ${inv.amount}.00
-                  </td>
-                  <td className="py-3 px-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs uppercase tracking-wider text-neutral-500">
+            Cambiar de plan
+          </h2>
+          <p className="text-[11px] text-neutral-500">
+            El cambio aplica al instante
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {plans.map((p) => {
+            const active = p.key === currentPlanKey;
+            const featured = p.key === "pro";
+            return (
+              <div
+                key={p.key}
+                className={`rounded-2xl border p-5 flex flex-col ${
+                  active
+                    ? "border-amber-400/60 bg-amber-400/[0.06]"
+                    : featured
+                      ? "border-amber-400/30 bg-gradient-to-b from-amber-400/[0.04] to-transparent"
+                      : "border-white/[0.08] bg-white/[0.02]"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-heading text-xl font-bold italic">
+                    {p.name}
+                  </p>
+                  {active && (
                     <Badge
                       variant="outline"
                       className="border-emerald-500/40 text-emerald-300 text-[10px]"
                     >
-                      ✓ Pagada
+                      Tu plan
                     </Badge>
-                  </td>
-                  <td className="py-3 px-5 text-right">
-                    <button
-                      onClick={() =>
-                        alert(`Descargando ${inv.id}.pdf… (mock)`)
-                      }
-                      className="text-[11px] text-amber-400 hover:text-amber-300"
+                  )}
+                  {!active && featured && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-400/40 text-amber-300 text-[10px]"
                     >
-                      ↓ PDF
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      Recomendado
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="mb-4">
+                  {p.monthly_price_usd === 0 ? (
+                    <p className="font-heading text-3xl font-bold italic">
+                      Gratis
+                    </p>
+                  ) : (
+                    <div className="flex items-baseline gap-1">
+                      <span className="font-heading text-3xl font-bold italic">
+                        ${p.monthly_price_usd}
+                      </span>
+                      <span className="text-xs text-neutral-500">/mes</span>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    {PLAN_BLURBS[p.key]}
+                  </p>
+                </div>
+
+                <ul className="space-y-1.5 mb-5 flex-1 text-xs text-neutral-300">
+                  <Feat>
+                    {p.is_unlimited
+                      ? "Minutos ilimitados"
+                      : `${p.minutes_included} minutos / mes`}
+                  </Feat>
+                  <Feat>
+                    {p.max_agents} agente{p.max_agents === 1 ? "" : "s"}
+                  </Feat>
+                  <Feat>
+                    {p.max_phone_numbers} número
+                    {p.max_phone_numbers === 1 ? "" : "s"} telefónico
+                    {p.max_phone_numbers === 1 ? "" : "s"}
+                  </Feat>
+                  <Feat>
+                    {p.integrations.length} integraciones
+                  </Feat>
+                  {p.can_clone_voice && <Feat>Clonación de voz</Feat>}
+                  {p.has_priority_support && <Feat>Soporte prioritario</Feat>}
+                </ul>
+
+                <Button
+                  onClick={() => changePlan(p.key)}
+                  disabled={active || changing === p.key}
+                  className={`w-full ${
+                    active
+                      ? "bg-white/[0.04] text-neutral-400 cursor-default"
+                      : "bg-amber-400 text-black hover:bg-amber-300 font-medium"
+                  }`}
+                >
+                  {active
+                    ? "Plan actual"
+                    : changing === p.key
+                      ? "Cambiando…"
+                      : `Cambiar a ${p.name}`}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Mock invoices (placeholder until Stripe is wired) */}
+      <section>
+        <h2 className="text-xs uppercase tracking-wider text-neutral-500 mb-3">
+          Historial de facturas
+        </h2>
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-6 text-center">
+          <p className="text-sm text-neutral-400">
+            Aún no hay facturas. Cuando integremos Stripe, tus pagos aparecerán
+            aquí.
+          </p>
         </div>
       </section>
     </div>
@@ -237,13 +301,17 @@ function UsageBlock({
   used,
   total,
   pct,
-  suffix = "",
+  unit,
+  unlimited,
+  hideBar,
 }: {
   label: string;
-  used: number;
-  total: number;
+  used: number | null;
+  total: number | null;
   pct: number;
-  suffix?: string;
+  unit: string;
+  unlimited?: boolean;
+  hideBar?: boolean;
 }) {
   return (
     <div className="rounded-lg bg-black/20 border border-white/[0.04] p-4">
@@ -251,17 +319,49 @@ function UsageBlock({
         {label}
       </p>
       <p className="text-sm font-mono text-neutral-100 mb-2">
-        <span className="text-2xl font-heading font-bold italic mr-1">
-          {used}
-        </span>
-        {suffix} <span className="text-neutral-500">/ {total}{suffix}</span>
+        {unlimited ? (
+          <span className="text-2xl font-heading font-bold italic">∞</span>
+        ) : used !== null ? (
+          <>
+            <span className="text-2xl font-heading font-bold italic mr-1">
+              {Math.round(used)}
+            </span>
+            {unit}{" "}
+            <span className="text-neutral-500">
+              / {total}
+              {unit}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-2xl font-heading font-bold italic">
+              {total}
+            </span>
+            <span className="text-xs text-neutral-500 ml-1">disponibles</span>
+          </>
+        )}
       </p>
-      <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
-        <div
-          className={`h-full ${pct > 80 ? "bg-red-400" : "bg-gradient-to-r from-amber-400 to-orange-400"}`}
-          style={{ width: `${Math.max(pct, 2)}%` }}
-        />
-      </div>
+      {!hideBar && !unlimited && (
+        <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
+          <div
+            className={`h-full ${
+              pct > 80
+                ? "bg-red-400"
+                : "bg-gradient-to-r from-amber-400 to-orange-400"
+            }`}
+            style={{ width: `${Math.max(pct, 2)}%` }}
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+function Feat({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="text-amber-400 leading-5 mt-px">✓</span>
+      <span>{children}</span>
+    </li>
   );
 }

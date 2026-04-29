@@ -263,23 +263,36 @@ def admin_get_agent(agent_id: str):
 
 
 @web_app.post("/admin/agents")
-def admin_create_agent(request: dict):
-    from app.admin.retell_mgmt import create_agent_simple
+def admin_create_agent(request: Request, body: dict = Body(...)):
+    from app.admin.retell_mgmt import create_agent_simple, list_agents
+    from app.billing import can_create_agent
+
+    # Enforce per-plan agent count limit
+    email = _email_from_request(request)
+    if email:
+        try:
+            current = len(list_agents())
+            ok, reason = can_create_agent(email, current)
+            if not ok:
+                return {"status": "error", "code": "plan_limit", "message": reason}
+        except Exception:
+            pass
+
     try:
         result = create_agent_simple(
-            name=request.get("name", "Nuevo agente"),
-            model=request.get("model", "claude-4.5-sonnet"),
-            voice_id=request.get("voice_id", "cartesia-Sofia"),
-            language=request.get("language", "es-419"),
-            begin_message=request.get("begin_message", "Hola, ¿en qué puedo ayudarle?"),
-            general_prompt=request.get("general_prompt", "Eres un asistente profesional."),
-            temperature=float(request.get("temperature", 0.4)),
-            webhook_url=request.get("webhook_url"),
-            timezone=request.get("timezone", "America/Mexico_City"),
+            name=body.get("name", "Nuevo agente"),
+            model=body.get("model", "claude-4.5-sonnet"),
+            voice_id=body.get("voice_id", "cartesia-Sofia"),
+            language=body.get("language", "es-419"),
+            begin_message=body.get("begin_message", "Hola, ¿en qué puedo ayudarle?"),
+            general_prompt=body.get("general_prompt", "Eres un asistente profesional."),
+            temperature=float(body.get("temperature", 0.4)),
+            webhook_url=body.get("webhook_url"),
+            timezone=body.get("timezone", "America/Mexico_City"),
         )
         return {"status": "ok", **result}
     except Exception as e:
-        log.exception(Phase.RETELL, "admin.agents.create.fail", e, data=request)
+        log.exception(Phase.RETELL, "admin.agents.create.fail", e, data=body)
         return {"status": "error", "message": str(e)}
 
 
@@ -486,6 +499,65 @@ def admin_retell_delete_number(phone_number: str):
 
 
 # ── Auth: OTP + JWT session ────────────────────────────────────────────────
+
+
+# ── Billing: planes y créditos ────────────────────────────────────────────
+
+
+@web_app.get("/admin/billing/me")
+def admin_billing_me(request: Request):
+    """Return the authenticated user's plan + usage snapshot."""
+    from app.billing import get_usage
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+    return {"status": "ok", **get_usage(email)}
+
+
+@web_app.post("/admin/billing/change-plan")
+def admin_billing_change_plan(request: Request, body: dict = Body(...)):
+    """Switch the user's plan. In production this would gate on Stripe;
+    for now it's a direct switch (good for trials / staff overrides)."""
+    from app.billing import PLANS, set_plan
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+    plan = (body.get("plan") or "").strip().lower()
+    if plan not in PLANS:
+        return {"status": "error", "message": f"Plan inválido: {plan}"}
+    rec = set_plan(email, plan)  # type: ignore[arg-type]
+    log.info(Phase.SYSTEM, "billing.plan_changed", data={"email": email, "plan": plan})
+    return {"status": "ok", "plan": rec["plan"]}
+
+
+@web_app.get("/admin/billing/plans")
+def admin_billing_plans():
+    """Public plan catalog used by the upgrade page / pricing comparison."""
+    from app.billing import PLANS
+
+    return {
+        "status": "ok",
+        "plans": [
+            {
+                "key": p.key,
+                "name": p.name,
+                "monthly_price_usd": p.monthly_price_usd,
+                "annual_price_usd": p.annual_price_usd,
+                "minutes_included": (
+                    None if p.minutes_included == float("inf") else p.minutes_included
+                ),
+                "is_unlimited": p.minutes_included == float("inf"),
+                "max_agents": p.max_agents,
+                "max_phone_numbers": p.max_phone_numbers,
+                "integrations": list(p.integrations),
+                "can_clone_voice": p.can_clone_voice,
+                "has_priority_support": p.has_priority_support,
+            }
+            for p in PLANS.values()
+        ],
+    }
 
 
 # ── AI Copilot: pregúntale a Claude sobre tu negocio ──────────────────────
@@ -2015,6 +2087,22 @@ def test_outbound_call(request: Request, body: dict = Body(...)):
     phone = (body.get("phone") or "").strip()
     interest = (body.get("interest") or "").strip()
     explicit_agent_id = (body.get("agent_id") or "").strip()
+
+    # Enforce minute quota
+    email = _email_from_request(request)
+    if email:
+        try:
+            from app.billing import can_use_minutes
+            ok, reason = can_use_minutes(email)
+            if not ok:
+                return {
+                    "status": "error",
+                    "stage": "plan_limit",
+                    "code": "plan_limit",
+                    "message": reason,
+                }
+        except Exception:
+            pass
 
     log.info(Phase.CALL_VALIDATE, "test_call.start", data={"name": name, "phone": phone, "interest_len": len(interest)})
 

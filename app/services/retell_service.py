@@ -14,11 +14,13 @@ def get_call(call_id: str) -> dict:
     return {
         "call_id": call.call_id,
         "status": call.call_status,
+        "agent_id": getattr(call, "agent_id", ""),
         "from_number": getattr(call, "from_number", ""),
         "to_number": getattr(call, "to_number", ""),
         "direction": getattr(call, "direction", ""),
         "duration_ms": getattr(call, "end_timestamp", 0) - getattr(call, "start_timestamp", 0),
         "transcript": getattr(call, "transcript", ""),
+        "recording_url": getattr(call, "recording_url", ""),
     }
 
 

@@ -81,6 +81,26 @@ def process_post_call(call_id: str) -> dict:
     direction = call_data.get("direction", "inbound")
     duration_sec = int(call_data.get("duration_ms", 0) / 1000)
 
+    # Bill the user for the minutes spent on this call. Resolve the
+    # owner via the agent → user_agents reverse lookup.
+    try:
+        from app.billing import add_minutes_used
+        from app.user_agents import get_user_agent_by_agent_id
+
+        agent_id = call_data.get("agent_id", "")
+        if agent_id and duration_sec > 0:
+            link = get_user_agent_by_agent_id(agent_id)
+            if link and link.get("email"):
+                add_minutes_used(link["email"], duration_sec)
+                log.info(
+                    Phase.SYSTEM,
+                    "billing.usage.recorded",
+                    call_id=call_id,
+                    data={"email": link["email"], "duration_sec": duration_sec},
+                )
+    except Exception as be:
+        log.exception(Phase.SYSTEM, "billing.usage.fail", be, call_id=call_id)
+
     if not transcript:
         log.warn(Phase.CALL_ANALYZED, "post_call.no_transcript", call_id=call_id)
         return {"status": "no_transcript", "call_id": call_id}

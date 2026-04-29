@@ -80,10 +80,38 @@ export function Sidebar() {
   const displayName = profile.owner_name || "Mi cuenta";
   const orgName = profile.business_name || "Mi negocio";
 
-  // Mock plan (later: fetch from backend)
-  const planMinutesUsed = 17;
-  const planMinutesTotal = 5000;
-  const planPct = Math.round((planMinutesUsed / planMinutesTotal) * 100);
+  // Live plan + usage from backend
+  const [planName, setPlanName] = useState<string>("Basic");
+  const [planMinutesUsed, setPlanMinutesUsed] = useState<number>(0);
+  const [planMinutesTotal, setPlanMinutesTotal] = useState<number | null>(50);
+  const [planUnlimited, setPlanUnlimited] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPlan() {
+      try {
+        const res = await fetch("/api/billing/me", { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled || data.status !== "ok") return;
+        setPlanName(data.plan?.name ?? "Basic");
+        setPlanUnlimited(!!data.plan?.is_unlimited);
+        setPlanMinutesTotal(data.plan?.minutes_included ?? null);
+        setPlanMinutesUsed(Math.round(data.usage?.minutes_used ?? 0));
+      } catch {}
+    }
+    loadPlan();
+    const id = setInterval(loadPlan, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  const planPct = planUnlimited
+    ? 0
+    : planMinutesTotal && planMinutesTotal > 0
+      ? Math.min(100, Math.round((planMinutesUsed / planMinutesTotal) * 100))
+      : 0;
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-white/[0.06] glass-strong">
@@ -145,28 +173,52 @@ export function Sidebar() {
       </nav>
 
       {/* Plan widget */}
-      <div className="px-4 pt-3 pb-2 border-t border-white/[0.06]">
+      <Link
+        href="/facturacion"
+        className="block px-4 pt-3 pb-2 border-t border-white/[0.06] hover:bg-white/[0.02] transition"
+      >
         <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] uppercase tracking-wider text-neutral-500">
-              Plan Business
+              Plan {planName}
             </span>
-            <span className="text-[10px] text-amber-400 font-mono">
-              {planPct}%
-            </span>
+            {!planUnlimited && (
+              <span
+                className={`text-[10px] font-mono ${
+                  planPct > 80 ? "text-red-400" : "text-amber-400"
+                }`}
+              >
+                {planPct}%
+              </span>
+            )}
           </div>
           <p className="text-sm font-mono text-neutral-100 mb-1.5">
-            {planMinutesUsed}{" "}
-            <span className="text-neutral-500">/ {planMinutesTotal} min</span>
+            {planUnlimited ? (
+              <>
+                <span className="text-lg font-heading italic">∞</span>{" "}
+                <span className="text-neutral-500 text-xs">minutos</span>
+              </>
+            ) : (
+              <>
+                {planMinutesUsed}{" "}
+                <span className="text-neutral-500">/ {planMinutesTotal} min</span>
+              </>
+            )}
           </p>
-          <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-amber-400 to-orange-400"
-              style={{ width: `${Math.max(planPct, 2)}%` }}
-            />
-          </div>
+          {!planUnlimited && (
+            <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
+              <div
+                className={`h-full ${
+                  planPct > 80
+                    ? "bg-red-400"
+                    : "bg-gradient-to-r from-amber-400 to-orange-400"
+                }`}
+                style={{ width: `${Math.max(planPct, 2)}%` }}
+              />
+            </div>
+          )}
         </div>
-      </div>
+      </Link>
 
       {/* User Profile */}
       {mounted && (

@@ -51,6 +51,20 @@ def get_user_agent(email: str) -> dict | None:
     return _user_agents.get(email.lower())
 
 
+def get_user_agent_by_agent_id(agent_id: str) -> dict | None:
+    """Reverse lookup: given an agent_id, find the user it belongs to.
+    Used by billing to attribute call minutes to the correct user."""
+    if not agent_id:
+        return None
+    try:
+        for _, link in _user_agents.items():
+            if isinstance(link, dict) and link.get("agent_id") == agent_id:
+                return link
+    except Exception:
+        return None
+    return None
+
+
 def unlink_user(email: str) -> None:
     try:
         del _user_agents[email.lower()]
