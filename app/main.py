@@ -1020,55 +1020,61 @@ def auth_quick_signin(request: dict):
 
 @web_app.post("/auth/request-code")
 def auth_request_code(request: dict):
-    """Generate OTP, store it, and email it to the user."""
-    from app.auth import generate_otp, send_otp_email, store_otp
+    """Generate OTP and deliver it via BOTH email (Resend) and SMS (Twilio).
+
+    Body: { "email": str, "phone": str (optional) }
+
+    Either channel succeeding is enough. If both fail OR Resend is in
+    sandbox mode, we expose dev_code so the user can complete the flow.
+    """
+    from app.auth import generate_otp, send_otp_dual, store_otp
 
     email = (request.get("email") or "").strip().lower()
+    phone = (request.get("phone") or "").strip()
+
     if not email or "@" not in email:
         return {"status": "error", "message": "Email inválido"}
 
     code = generate_otp()
     store_otp(email, code)
-    log.info(Phase.SYSTEM, "auth.request_code", data={"email": email})
+    log.info(Phase.SYSTEM, "auth.request_code", data={"email": email, "phone_set": bool(phone)})
 
-    try:
-        delivery = send_otp_email(email, code)
-        sandbox = bool(delivery.get("sandbox_redirect"))
-        msg = "Código enviado"
+    delivery = send_otp_dual(email=email, phone=phone, code=code)
+    email_meta = delivery.get("email", {})
+    sms_meta = delivery.get("sms", {})
+    sandbox = bool(email_meta.get("sandbox_redirect"))
+
+    # Build a human-friendly delivery summary
+    channels = []
+    if email_meta.get("sent"):
         if sandbox:
-            msg = "Modo sandbox: copia el código de la pantalla"
-        response: dict = {
-            "status": "ok",
-            "message": msg,
-            "sent_to": delivery.get("sent_to"),
-            "sandbox_redirect": sandbox,
-            "email_sent": True,
-        }
-        # When in sandbox (no domain verified in Resend), expose the code so
-        # the frontend can show it directly. When a domain is verified in Resend,
-        # sandbox_redirect is False and dev_code is NOT exposed.
-        if sandbox:
-            response["dev_code"] = code
-        return response
-    except Exception as e:
-        # Email failed — fallback: devolver el código directo al cliente para
-        # que lo pueda mostrar en pantalla (development only, sin verificación
-        # real). En producción con dominio Resend verificado, esto nunca se
-        # ejecuta porque send_otp_email no lanza excepción.
-        log.warn(
-            Phase.SYSTEM,
-            "auth.request_code.fallback_inline",
-            data={"email": email, "reason": str(e)[:200]},
-        )
-        return {
-            "status": "ok",
-            "message": "Email no enviado. Usa el código que aparece abajo.",
-            "sent_to": None,
-            "sandbox_redirect": False,
-            "email_sent": False,
-            "dev_code": code,
-            "delivery_error": str(e)[:200],
-        }
+            channels.append(f"📧 email (sandbox → {email_meta.get('sent_to')})")
+        else:
+            channels.append(f"📧 email ({email_meta.get('sent_to')})")
+    if sms_meta.get("sent"):
+        channels.append(f"📱 SMS ({phone})")
+
+    response: dict = {
+        "status": "ok",
+        "message": "Código enviado por: " + " y ".join(channels)
+        if channels
+        else "Usa el código de prueba mostrado abajo.",
+        "sent_to_email": email_meta.get("sent_to") or None,
+        "sandbox_redirect": sandbox,
+        "email_sent": email_meta.get("sent", False),
+        "email_error": email_meta.get("error"),
+        "sms_sent": sms_meta.get("sent", False),
+        "sms_error": sms_meta.get("error"),
+        "any_sent": delivery.get("any_sent", False),
+    }
+
+    # Expose dev_code when the email got redirected to owner OR neither
+    # channel worked. Production w/ verified domain + working SMS won't
+    # hit either branch.
+    if sandbox or not delivery.get("any_sent"):
+        response["dev_code"] = code
+
+    return response
 
 
 @web_app.post("/auth/verify-code")

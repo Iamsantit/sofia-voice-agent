@@ -96,9 +96,9 @@ def send_otp_email(email: str, code: str) -> dict:
     owner_email = os.environ.get("RESEND_OWNER_EMAIL", "").strip()
 
     primary_payload = {
-        "from": f"Sofía <{from_addr}>",
+        "from": f"SofiaAI <{from_addr}>",
         "to": [email],
-        "subject": f"Tu código de Sofía: {code}",
+        "subject": f"Tu código SofiaAI: {code}",
         "html": _render_otp_html(code, recipient=email),
     }
 
@@ -120,7 +120,7 @@ def send_otp_email(email: str, code: str) -> dict:
             data={"requested_for": email, "redirected_to": owner_email},
         )
         retry_payload = {
-            "from": f"Sofía <{from_addr}>",
+            "from": f"SofiaAI <{from_addr}>",
             "to": [owner_email],
             "subject": f"[Sandbox] Código para {email}: {code}",
             "html": _render_otp_html(code, recipient=email, sandbox_for=email),
@@ -144,6 +144,90 @@ def send_otp_email(email: str, code: str) -> dict:
     raise RuntimeError(f"No se pudo enviar el email (HTTP {r.status_code}): {r.text[:200]}")
 
 
+def send_otp_sms(phone: str, code: str) -> dict:
+    """Send OTP via Twilio SMS. Returns {sent: bool, sid: str|None, error: str|None}.
+
+    Twilio SMS works to any number worldwide that's reachable by our trial
+    account (verified destinations only on trial; any number on a paid
+    account). No domain verification needed — this is the most reliable
+    delivery channel for sign-up codes.
+    """
+    if not phone or not phone.strip():
+        return {"sent": False, "sid": None, "error": "missing_phone"}
+
+    try:
+        from twilio.rest import Client
+
+        sid = os.environ["TWILIO_ACCOUNT_SID"]
+        token = os.environ["TWILIO_AUTH_TOKEN"]
+        from_number = os.environ["TWILIO_PHONE_NUMBER"]
+    except KeyError as e:
+        return {"sent": False, "sid": None, "error": f"missing_env:{e}"}
+
+    body = (
+        f"Tu código de SofiaAI es {code}. "
+        f"Expira en 10 minutos. No lo compartas con nadie."
+    )
+
+    try:
+        client = Client(sid, token)
+        msg = client.messages.create(
+            to=phone.strip(),
+            from_=from_number,
+            body=body,
+        )
+        log.info(
+            Phase.SYSTEM,
+            "auth.sms.sent",
+            data={"phone": phone, "sid": msg.sid, "status": msg.status},
+        )
+        return {"sent": True, "sid": msg.sid, "error": None}
+    except Exception as e:
+        log.warn(
+            Phase.SYSTEM,
+            "auth.sms.send_fail",
+            data={"phone": phone, "reason": str(e)[:200]},
+        )
+        return {"sent": False, "sid": None, "error": str(e)[:200]}
+
+
+def send_otp_dual(email: str, phone: str, code: str) -> dict:
+    """Send the OTP code via BOTH email and SMS in parallel.
+
+    Returns a unified result the API layer can pass back to the UI.
+    Either channel succeeding is enough — the user just needs to
+    receive the code somewhere.
+
+    Result shape:
+      {
+        "any_sent": bool,
+        "email": {"sent": bool, "sent_to": str, "sandbox_redirect": bool, "error": str|None},
+        "sms":   {"sent": bool, "sid": str|None, "error": str|None},
+      }
+    """
+    email_out = {"sent": False, "sent_to": "", "sandbox_redirect": False, "error": None}
+    try:
+        meta = send_otp_email(email, code)
+        email_out = {
+            "sent": True,
+            "sent_to": meta.get("sent_to", email),
+            "sandbox_redirect": bool(meta.get("sandbox_redirect")),
+            "error": None,
+        }
+    except Exception as e:
+        email_out["error"] = str(e)[:200]
+
+    sms_out = send_otp_sms(phone, code) if phone else {
+        "sent": False, "sid": None, "error": "no_phone_provided",
+    }
+
+    return {
+        "any_sent": email_out["sent"] or sms_out["sent"],
+        "email": email_out,
+        "sms": sms_out,
+    }
+
+
 def _render_otp_html(code: str, recipient: str = "", sandbox_for: str = "") -> str:
     sandbox_banner = ""
     if sandbox_for:
@@ -159,8 +243,8 @@ def _render_otp_html(code: str, recipient: str = "", sandbox_for: str = "") -> s
 <body style="margin:0;padding:40px 20px;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:480px;margin:0 auto;background:#111;border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:40px;color:#e5e5e5;">
     <div style="text-align:center;margin-bottom:32px;">
-      <div style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#ec4899,#fbbf24,#22d3ee);color:#000;font-weight:700;font-size:20px;">V</div>
-      <h1 style="margin:16px 0 0;font-size:24px;font-weight:600;font-style:italic;">Voicely</h1>
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;background:#fbbf24;color:#000;font-weight:700;font-size:20px;">S</div>
+      <h1 style="margin:16px 0 0;font-size:24px;font-weight:600;font-style:italic;">Sofia<span style="color:#fbbf24;">AI</span></h1>
     </div>
     {sandbox_banner}
     <p style="font-size:16px;margin:0 0 16px;color:#a3a3a3;">Tu código de acceso:</p>

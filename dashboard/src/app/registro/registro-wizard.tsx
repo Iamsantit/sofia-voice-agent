@@ -48,7 +48,8 @@ const INITIAL: FormData = {
 const STEPS = [
   { key: 1, label: "Tu negocio", icon: "🏢" },
   { key: 2, label: "Tu cuenta", icon: "👤" },
-  { key: 3, label: "Tu agente", icon: "🤖" },
+  { key: 3, label: "Verifica tu correo", icon: "🔐" },
+  { key: 4, label: "Tu agente", icon: "🤖" },
 ];
 
 export function RegistroWizard() {
@@ -131,23 +132,36 @@ export function RegistroWizard() {
       const res = await fetch("/api/auth/request-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: data.owner_email.trim().toLowerCase() }),
+        body: JSON.stringify({
+          email: data.owner_email.trim().toLowerCase(),
+          phone: data.owner_phone.trim(),
+        }),
       });
       const result = await res.json();
       if (result.status === "ok") {
         setOtpRequested(true);
         setOtpResendCooldown(45);
-        if (result.sandbox_redirect && result.sent_to) {
+
+        // Build a friendly delivery notice based on what actually worked
+        const channels: string[] = [];
+        if (result.email_sent && !result.sandbox_redirect)
+          channels.push(`📧 ${result.sent_to_email}`);
+        if (result.sms_sent) channels.push(`📱 SMS al ${data.owner_phone}`);
+
+        if (result.sandbox_redirect) {
           setOtpSandboxNotice(
-            `Modo sandbox de prueba: el correo se envió a ${result.sent_to}. Usa el código que aparece abajo.`,
+            `Resend está en modo sandbox: el correo se redirigió a ${result.sent_to_email}. Para enviar a usuarios reales, verifica tu dominio en resend.com/domains. Mientras tanto usa el código que aparece abajo (o el SMS si llegó).`,
           );
-        } else if (result.email_sent === false) {
+        } else if (channels.length === 0) {
           setOtpSandboxNotice(
-            "No se pudo enviar el correo. Usa el código que aparece abajo para continuar.",
+            "No se pudo enviar ni email ni SMS. Usa el código que aparece abajo para continuar.",
           );
+        } else if (channels.length === 1) {
+          setOtpSandboxNotice(`Código enviado a ${channels[0]}.`);
         } else {
-          setOtpSandboxNotice(null);
+          setOtpSandboxNotice(`Código enviado a ${channels.join(" y ")}.`);
         }
+
         if (typeof result.dev_code === "string") {
           setDevCode(result.dev_code);
         }
@@ -253,40 +267,10 @@ export function RegistroWizard() {
 
     const owner_name = `${data.first_name} ${data.last_name}`.trim();
 
-    // 1) Register the user (creates account + sets session cookie)
-    try {
-      const regRes = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: data.owner_email.trim().toLowerCase(),
-          phone: data.owner_phone.trim(),
-          first_name: data.first_name.trim(),
-          last_name: data.last_name.trim(),
-          password: data.password,
-        }),
-      });
-      const regData = await regRes.json().catch(() => ({}));
-      if (!regRes.ok || regData.status !== "ok") {
-        // already_registered → push them to login
-        if (regData.code === "already_registered") {
-          setError(
-            "Este correo ya está registrado. Ve a 'Iniciar sesión' para entrar.",
-          );
-          setLoading(false);
-          return;
-        }
-        setError(regData.message ?? "No se pudo crear la cuenta");
-        setLoading(false);
-        return;
-      }
-    } catch {
-      setError("Error de red al crear la cuenta");
-      setLoading(false);
-      return;
-    }
+    // Account already created in step 2; OTP verified in step 3.
+    // Now we just need to provision the Retell agent in background.
 
-    // 2) Stash payload + nav to /exito which will create the agent in background
+    // Stash payload + nav to /exito which creates the agent in background
     const payload: Record<string, unknown> = {
       industry: data.industry,
       business_name: data.business_name,
@@ -572,6 +556,12 @@ export function RegistroWizard() {
             </p>
           </div>
 
+          {error && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/[0.04] p-3 text-xs text-red-300">
+              {error}
+            </div>
+          )}
+
           <div className="flex justify-between pt-4">
             <Button
               onClick={() => setStep(1)}
@@ -581,28 +571,70 @@ export function RegistroWizard() {
               ← Atrás
             </Button>
             <Button
-              onClick={() => setStep(3)}
-              disabled={!canNext2}
+              onClick={async () => {
+                if (!canNext2 || loading) return;
+                setError(null);
+                setLoading(true);
+                try {
+                  // 1) Register the user (creates account + sets cookie)
+                  const regRes = await fetch("/api/auth/register", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      email: data.owner_email.trim().toLowerCase(),
+                      phone: data.owner_phone.trim(),
+                      first_name: data.first_name.trim(),
+                      last_name: data.last_name.trim(),
+                      password: data.password,
+                    }),
+                  });
+                  const regData = await regRes.json().catch(() => ({}));
+                  if (!regRes.ok || regData.status !== "ok") {
+                    if (regData.code === "already_registered") {
+                      setError(
+                        "Este correo ya está registrado. Ve a 'Iniciar sesión' para entrar.",
+                      );
+                    } else {
+                      setError(regData.message ?? "No se pudo crear la cuenta");
+                    }
+                    setLoading(false);
+                    return;
+                  }
+                  // 2) Move to OTP step + fire request-code (email + SMS)
+                  setStep(3);
+                  if (!otpRequested) requestOtp();
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={!canNext2 || loading}
               className="bg-amber-400 text-black hover:bg-amber-300 font-medium px-8 disabled:opacity-40"
             >
-              Siguiente →
+              {loading ? "Creando cuenta…" : "Crear cuenta →"}
             </Button>
           </div>
         </div>
       )}
 
-      {/* OTP step removed — now using password auth instead. Kept code for now in
-          case we want to bring it back as an optional second factor later. */}
-      {false && step === -999 && (
+      {/* Step 3: OTP verification */}
+      {step === 3 && (
         <div className="space-y-6">
           <div>
             <h2 className="font-heading text-3xl font-bold italic tracking-tight">
-              Verifica tu correo
+              Verifica tu cuenta
             </h2>
             <p className="mt-2 text-sm text-neutral-400">
               Enviamos un código de 6 dígitos a{" "}
-              <span className="text-neutral-200">{data.owner_email}</span>.
-              Revisa tu bandeja (y la carpeta de spam).
+              <span className="text-neutral-200">{data.owner_email}</span>
+              {data.owner_phone && (
+                <>
+                  {" "}y por SMS al{" "}
+                  <span className="text-neutral-200 font-mono">
+                    {data.owner_phone}
+                  </span>
+                </>
+              )}
+              . Usa el primero que recibas.
             </p>
           </div>
 
@@ -695,8 +727,8 @@ export function RegistroWizard() {
         </div>
       )}
 
-      {/* Step 3: Agent */}
-      {step === 3 && (
+      {/* Step 4: Agent */}
+      {step === 4 && (
         <div className="space-y-6">
           <div>
             <h2 className="font-heading text-3xl font-bold italic tracking-tight">
@@ -843,7 +875,7 @@ export function RegistroWizard() {
 
           <div className="flex justify-between pt-4">
             <Button
-              onClick={() => setStep(2)}
+              onClick={() => setStep(3)}
               variant="outline"
               disabled={loading}
               className="border-white/[0.08] text-neutral-300 hover:bg-white/[0.04]"
