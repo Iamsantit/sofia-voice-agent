@@ -14,6 +14,7 @@ import { AnimatedNumber } from "./animated-number";
 import { LiveClock } from "./live-clock";
 import { HealthPulse } from "./health-pulse";
 import { PendingOnboardingBanner } from "./pending-onboarding-banner";
+import { TrialBanner } from "./trial-banner";
 
 type Stats = {
   totalLeads: number;
@@ -117,6 +118,7 @@ export function DashboardClient() {
 
   return (
     <>
+      <TrialBanner />
       <PendingOnboardingBanner />
       <IndustryWelcome />
 

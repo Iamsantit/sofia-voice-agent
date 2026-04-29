@@ -45,12 +45,15 @@ class Plan:
     integrations: tuple[str, ...]     # whitelist of integration keys
     can_clone_voice: bool
     has_priority_support: bool
+    # Trial: if > 0, the plan auto-locks after this many days from signup.
+    # Used to gate the Basic/Starter plan to a 14-day free trial.
+    trial_days: int = 0
 
 
 PLANS: dict[PlanKey, Plan] = {
     "basic": Plan(
         key="basic",
-        name="Basic",
+        name="Starter",
         monthly_price_usd=0,
         annual_price_usd=0,
         minutes_included=50,
@@ -59,6 +62,7 @@ PLANS: dict[PlanKey, Plan] = {
         integrations=("custom-webhook",),
         can_clone_voice=False,
         has_priority_support=False,
+        trial_days=14,
     ),
     "pro": Plan(
         key="pro",
@@ -177,6 +181,58 @@ def get_plan(email: str) -> Plan:
     return PLANS.get(rec.get("plan", DEFAULT_PLAN), PLANS[DEFAULT_PLAN])
 
 
+# ── Trial helpers ───────────────────────────────────────────────────────────
+
+
+def trial_remaining_seconds(email: str) -> int | None:
+    """Seconds left on the user's trial. None if their plan has no trial.
+    Negative or zero means the trial expired."""
+    rec = get_record(email)
+    plan = PLANS.get(rec.get("plan", DEFAULT_PLAN), PLANS[DEFAULT_PLAN])
+    if plan.trial_days <= 0:
+        return None
+    try:
+        started = datetime.fromisoformat(
+            rec.get("created_at", _now_iso()).replace("Z", "+00:00")
+        )
+    except Exception:
+        started = _now_dt()
+    expires = started + timedelta(days=plan.trial_days)
+    return int((expires - _now_dt()).total_seconds())
+
+
+def is_trial_expired(email: str) -> bool:
+    remaining = trial_remaining_seconds(email)
+    return remaining is not None and remaining <= 0
+
+
+def trial_status(email: str) -> dict:
+    """Compact trial info used by the UI."""
+    rec = get_record(email)
+    plan = PLANS.get(rec.get("plan", DEFAULT_PLAN), PLANS[DEFAULT_PLAN])
+    if plan.trial_days <= 0:
+        return {"is_trial": False, "expired": False}
+    remaining = trial_remaining_seconds(email) or 0
+    days = max(0, remaining // 86400 + (1 if remaining % 86400 > 0 and remaining > 0 else 0))
+    try:
+        started = datetime.fromisoformat(
+            rec.get("created_at", _now_iso()).replace("Z", "+00:00")
+        )
+    except Exception:
+        started = _now_dt()
+    expires_at = (started + timedelta(days=plan.trial_days)).isoformat(
+        timespec="seconds"
+    )
+    return {
+        "is_trial": True,
+        "expired": remaining <= 0,
+        "days_remaining": days,
+        "seconds_remaining": max(0, remaining),
+        "expires_at": expires_at,
+        "trial_days": plan.trial_days,
+    }
+
+
 def get_usage(email: str) -> dict:
     """Compact view used by the dashboard."""
     rec = get_record(email)
@@ -198,6 +254,7 @@ def get_usage(email: str) -> dict:
             "integrations": list(plan.integrations),
             "can_clone_voice": plan.can_clone_voice,
             "has_priority_support": plan.has_priority_support,
+            "trial_days": plan.trial_days,
         },
         "usage": {
             "minutes_used": round(used, 2),
@@ -205,6 +262,7 @@ def get_usage(email: str) -> dict:
             "period_started_at": rec.get("period_started_at"),
             "period_days": PERIOD_DAYS,
         },
+        "trial": trial_status(email),
     }
 
 
@@ -215,6 +273,11 @@ def can_use_minutes(email: str, requested_seconds: float = 0.0) -> tuple[bool, s
     """True if the user has minutes left for an upcoming call.
     Returns (allowed, reason_if_not).
     """
+    if is_trial_expired(email):
+        return False, (
+            "Tu trial gratis de 14 días venció. Sube a Pro o Plus para "
+            "seguir haciendo llamadas."
+        )
     plan = get_plan(email)
     if plan.minutes_included == UNLIMITED:
         return True, ""
@@ -230,6 +293,11 @@ def can_use_minutes(email: str, requested_seconds: float = 0.0) -> tuple[bool, s
 
 
 def can_create_agent(email: str, current_agent_count: int) -> tuple[bool, str]:
+    if is_trial_expired(email):
+        return False, (
+            "Tu trial gratis de 14 días venció. Sube a Pro o Plus para "
+            "crear más agentes."
+        )
     plan = get_plan(email)
     if current_agent_count >= plan.max_agents:
         return False, (
@@ -240,6 +308,11 @@ def can_create_agent(email: str, current_agent_count: int) -> tuple[bool, str]:
 
 
 def can_buy_phone_number(email: str, current_number_count: int) -> tuple[bool, str]:
+    if is_trial_expired(email):
+        return False, (
+            "Tu trial gratis de 14 días venció. Sube a Pro o Plus para "
+            "comprar números."
+        )
     plan = get_plan(email)
     if current_number_count >= plan.max_phone_numbers:
         return False, (

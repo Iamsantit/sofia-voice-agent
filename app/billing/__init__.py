@@ -14,7 +14,10 @@ from app.billing.plans import (
     get_plan,
     get_record,
     get_usage,
+    is_trial_expired,
     set_plan,
+    trial_remaining_seconds,
+    trial_status,
 )
 
 __all__ = [
@@ -31,5 +34,8 @@ __all__ = [
     "get_plan",
     "get_record",
     "get_usage",
+    "is_trial_expired",
     "set_plan",
+    "trial_remaining_seconds",
+    "trial_status",
 ]

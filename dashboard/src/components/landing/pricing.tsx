@@ -10,6 +10,7 @@ type Plan = {
   annual: number;
   features: string[];
   highlight?: boolean;
+  trialBadge?: string;
   cta: string;
   ctaHref: string;
 };
@@ -17,17 +18,19 @@ type Plan = {
 const PLANS: Plan[] = [
   {
     name: "Starter",
-    tagline: "Para probar y validar",
+    tagline: "Pruébalo gratis 14 días",
     monthly: 0,
     annual: 0,
+    trialBadge: "14 días gratis",
     features: [
-      "50 minutos/mes incluidos",
+      "Acceso completo durante 14 días",
+      "50 minutos incluidos",
       "1 agente de voz",
       "1 número telefónico",
       "Calificación automática de leads",
-      "Soporte por email",
+      "Sin tarjeta de crédito requerida",
     ],
-    cta: "Empezar gratis",
+    cta: "Empezar trial",
     ctaHref: "/registro?plan=starter",
   },
   {
@@ -176,6 +179,11 @@ function PlanCard({ plan, annual }: { plan: Plan; annual: boolean }) {
           Más popular
         </div>
       )}
+      {plan.trialBadge && !plan.highlight && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-emerald-500 text-[10px] uppercase tracking-wider font-bold text-black">
+          ⏱ {plan.trialBadge}
+        </div>
+      )}
       <div className="mb-4">
         <h3 className="font-heading text-2xl font-bold text-neutral-100">
           {plan.name}
@@ -189,9 +197,16 @@ function PlanCard({ plan, annual }: { plan: Plan; annual: boolean }) {
             Custom
           </p>
         ) : isFree ? (
-          <p className="text-4xl font-heading font-bold text-neutral-100">
-            Gratis
-          </p>
+          <>
+            <p className="text-4xl font-heading font-bold text-neutral-100">
+              Gratis
+            </p>
+            {plan.trialBadge && (
+              <p className="text-[11px] text-emerald-400 mt-1">
+                14 días, después elige plan
+              </p>
+            )}
+          </>
         ) : (
           <div className="flex items-baseline gap-1">
             <span className="text-4xl font-heading font-bold text-neutral-100">

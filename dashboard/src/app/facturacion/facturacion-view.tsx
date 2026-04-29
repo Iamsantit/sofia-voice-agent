@@ -28,6 +28,13 @@ type Me = {
     period_started_at: string;
     period_days: number;
   };
+  trial?: {
+    is_trial: boolean;
+    expired: boolean;
+    days_remaining?: number;
+    expires_at?: string;
+    trial_days?: number;
+  };
 };
 
 const PLAN_BLURBS: Record<string, string> = {
@@ -102,7 +109,67 @@ export function FacturacionView() {
         {loading || !me?.plan || !me.usage ? (
           <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] h-48 animate-pulse" />
         ) : (
-          <div className="rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-400/[0.06] via-transparent to-transparent p-6">
+          <div
+            className={`rounded-2xl border p-6 ${
+              me.trial?.expired
+                ? "border-red-500/40 bg-gradient-to-br from-red-500/[0.06] via-transparent to-transparent"
+                : me.trial?.is_trial && (me.trial.days_remaining ?? 0) <= 3
+                  ? "border-amber-500/50 bg-gradient-to-br from-amber-500/[0.08] via-transparent to-transparent"
+                  : "border-amber-400/30 bg-gradient-to-br from-amber-400/[0.06] via-transparent to-transparent"
+            }`}
+          >
+            {me.trial?.is_trial && me.trial.expired && (
+              <div className="rounded-lg border border-red-500/40 bg-red-500/[0.08] p-3 mb-4 flex items-start gap-2">
+                <span className="text-lg">⛔</span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-red-200">
+                    Tu trial gratis venció
+                  </p>
+                  <p className="text-[11px] text-red-300/80 mt-0.5">
+                    Sube de plan para seguir creando agentes y haciendo
+                    llamadas. Mientras tanto el dashboard sigue accesible
+                    en modo solo lectura.
+                  </p>
+                </div>
+              </div>
+            )}
+            {me.trial?.is_trial && !me.trial.expired && (
+              <div
+                className={`rounded-lg border p-3 mb-4 flex items-start gap-2 ${
+                  (me.trial.days_remaining ?? 14) <= 3
+                    ? "border-amber-500/40 bg-amber-500/[0.08]"
+                    : "border-emerald-500/30 bg-emerald-500/[0.05]"
+                }`}
+              >
+                <span className="text-lg">⏱</span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-neutral-100">
+                    Te quedan{" "}
+                    <span
+                      className={
+                        (me.trial.days_remaining ?? 14) <= 3
+                          ? "text-amber-300 font-bold"
+                          : "text-emerald-300 font-bold"
+                      }
+                    >
+                      {me.trial.days_remaining}{" "}
+                      {me.trial.days_remaining === 1 ? "día" : "días"}
+                    </span>{" "}
+                    de trial gratis
+                  </p>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">
+                    Vence el{" "}
+                    {me.trial.expires_at &&
+                      new Date(me.trial.expires_at).toLocaleDateString(
+                        "es-ES",
+                        { day: "numeric", month: "long", year: "numeric" },
+                      )}
+                    . Sube a Pro o Plus para no perder acceso.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
               <div>
                 <div className="flex items-center gap-3 mb-1">
@@ -111,9 +178,17 @@ export function FacturacionView() {
                   </h3>
                   <Badge
                     variant="outline"
-                    className="border-emerald-500/40 text-emerald-300 text-[10px]"
+                    className={
+                      me.trial?.expired
+                        ? "border-red-500/40 text-red-300 text-[10px]"
+                        : "border-emerald-500/40 text-emerald-300 text-[10px]"
+                    }
                   >
-                    Activo
+                    {me.trial?.expired
+                      ? "Trial vencido"
+                      : me.trial?.is_trial
+                        ? "Trial"
+                        : "Activo"}
                   </Badge>
                 </div>
                 <p className="text-sm text-neutral-400">
