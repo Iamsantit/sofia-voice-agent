@@ -1134,18 +1134,59 @@ def admin_list_team():
 
 
 @web_app.post("/admin/team")
-def admin_add_member(request: dict):
+def admin_add_member(request: Request, body: dict = Body(...)):
     from app.admin import team
+    from app.auth import send_team_invite_email
+    from app.user_agents import get_user_agent
+
     try:
+        # Pull inviter context from authenticated session
+        inviter_email = _email_from_request(request) or ""
+        inviter_name = ""
+        business_name = ""
+        if inviter_email:
+            link = get_user_agent(inviter_email)
+            if link:
+                business_name = link.get("business_name", "")
+                inviter_name = (
+                    body.get("invited_by")
+                    or link.get("agent_name", "")
+                    or inviter_email.split("@")[0]
+                )
+
         member = team.add_member(
-            name=request.get("name", ""),
-            email=request.get("email", ""),
-            role=request.get("role", "editor"),
-            invited_by=request.get("invited_by", ""),
+            name=body.get("name", ""),
+            email=body.get("email", ""),
+            role=body.get("role", "editor"),
+            invited_by=inviter_name or body.get("invited_by", ""),
         )
-        return {"status": "ok", "member": member}
+
+        # Fire the invitation email (non-blocking semantics: we still
+        # return ok even if the email failed, just report delivery info).
+        invite_result = {
+            "sent": False,
+            "sent_to": "",
+            "sandbox_redirect": False,
+            "error": None,
+        }
+        try:
+            invite_result = send_team_invite_email(
+                to_email=member["email"],
+                inviter_name=inviter_name or "Tu compañero",
+                business_name=business_name or "tu cuenta de SofiaAI",
+                role=member["role"],
+            )
+        except Exception as ie:
+            log.exception(Phase.SYSTEM, "admin.team.invite_email.fail", ie)
+            invite_result["error"] = str(ie)[:200]
+
+        return {
+            "status": "ok",
+            "member": member,
+            "invite": invite_result,
+        }
     except Exception as e:
-        log.exception(Phase.SYSTEM, "admin.team.add.fail", e, data=request)
+        log.exception(Phase.SYSTEM, "admin.team.add.fail", e, data=body)
         return {"status": "error", "message": str(e)}
 
 

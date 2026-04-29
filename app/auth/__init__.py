@@ -228,6 +228,142 @@ def send_otp_dual(email: str, phone: str, code: str) -> dict:
     }
 
 
+def send_team_invite_email(
+    to_email: str,
+    inviter_name: str,
+    business_name: str,
+    role: str,
+    dashboard_url: str = "https://sofia-voice-agent.vercel.app",
+) -> dict:
+    """Send a team-invitation email via Resend.
+
+    Same sandbox semantics as send_otp_email: if Resend redirects to
+    the owner inbox we report it back so the UI can warn the inviter.
+
+    Returns: {sent: bool, sent_to: str, sandbox_redirect: bool, error: str|None}
+    """
+    from_addr = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+    owner_email = os.environ.get("RESEND_OWNER_EMAIL", "").strip()
+
+    inviter = (inviter_name or "Tu compañero").strip() or "Tu compañero"
+    biz = (business_name or "una cuenta de SofiaAI").strip()
+    role_label = {
+        "admin": "Admin",
+        "editor": "Editor",
+        "viewer": "Sólo lectura",
+        "owner": "Owner",
+    }.get(role, "Miembro")
+
+    payload = {
+        "from": f"SofiaAI <{from_addr}>",
+        "to": [to_email],
+        "subject": f"{inviter} te invitó a {biz} en SofiaAI",
+        "html": _render_invite_html(
+            to_email=to_email,
+            inviter=inviter,
+            business=biz,
+            role_label=role_label,
+            dashboard_url=dashboard_url,
+        ),
+    }
+
+    try:
+        r = _resend_post(payload)
+    except Exception as e:
+        return {"sent": False, "sent_to": "", "sandbox_redirect": False, "error": str(e)[:200]}
+
+    if r.ok:
+        log.info(Phase.SYSTEM, "team.invite.sent", data={"to": to_email, "biz": biz})
+        return {"sent": True, "sent_to": to_email, "sandbox_redirect": False, "error": None}
+
+    is_sandbox_err = (
+        r.status_code == 403
+        and "testing emails to your own" in r.text.lower()
+    )
+    if is_sandbox_err and owner_email and owner_email != to_email:
+        retry = {
+            "from": f"SofiaAI <{from_addr}>",
+            "to": [owner_email],
+            "subject": f"[Sandbox] Invitación para {to_email} a {biz}",
+            "html": _render_invite_html(
+                to_email=to_email,
+                inviter=inviter,
+                business=biz,
+                role_label=role_label,
+                dashboard_url=dashboard_url,
+                sandbox_for=to_email,
+            ),
+        }
+        try:
+            r2 = _resend_post(retry)
+        except Exception as e:
+            return {"sent": False, "sent_to": "", "sandbox_redirect": False, "error": str(e)[:200]}
+        if r2.ok:
+            log.warn(
+                Phase.SYSTEM,
+                "team.invite.sandbox_redirect",
+                data={"intended_for": to_email, "owner": owner_email},
+            )
+            return {
+                "sent": True,
+                "sent_to": owner_email,
+                "sandbox_redirect": True,
+                "error": None,
+            }
+
+    log.error(
+        Phase.SYSTEM,
+        "team.invite.fail",
+        data={"to": to_email, "status": r.status_code, "body": r.text[:300]},
+        message=f"Resend HTTP {r.status_code}",
+    )
+    return {
+        "sent": False,
+        "sent_to": "",
+        "sandbox_redirect": False,
+        "error": f"HTTP {r.status_code}: {r.text[:120]}",
+    }
+
+
+def _render_invite_html(
+    to_email: str,
+    inviter: str,
+    business: str,
+    role_label: str,
+    dashboard_url: str,
+    sandbox_for: str = "",
+) -> str:
+    sandbox_banner = ""
+    if sandbox_for:
+        sandbox_banner = f"""
+    <div style="background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.4);border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:#fbbf24;">
+      ⚠️ <strong>Modo sandbox de Resend.</strong> Esta invitación es para
+      <strong>{sandbox_for}</strong>. Para que cada usuario reciba su correo
+      directamente, verifica un dominio en resend.com/domains.
+    </div>"""
+    return f"""<!doctype html>
+<html>
+<body style="margin:0;padding:40px 20px;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#111;border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:40px;color:#e5e5e5;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:12px;background:#fbbf24;color:#000;font-weight:700;font-size:20px;">S</div>
+      <h1 style="margin:16px 0 0;font-size:24px;font-weight:600;font-style:italic;">Sofia<span style="color:#fbbf24;">AI</span></h1>
+    </div>
+    {sandbox_banner}
+    <p style="font-size:18px;color:#fafafa;margin:0 0 8px;line-height:1.4;"><strong>{inviter}</strong> te invitó a colaborar en <strong>{business}</strong>.</p>
+    <p style="font-size:14px;color:#a3a3a3;margin:0 0 24px;">Tu rol: <span style="color:#fbbf24;">{role_label}</span></p>
+    <p style="font-size:14px;color:#a3a3a3;margin:0 0 8px;">Para aceptar la invitación, entra al dashboard con este correo (<strong>{to_email}</strong>) y crea tu contraseña.</p>
+    <div style="text-align:center;margin:28px 0;">
+      <a href="{dashboard_url}/registro" style="display:inline-block;background:#fbbf24;color:#000;text-decoration:none;font-weight:600;padding:12px 24px;border-radius:8px;">Aceptar invitación →</a>
+    </div>
+    <p style="font-size:12px;color:#737373;margin:32px 0 0;border-top:1px solid rgba(255,255,255,0.06);padding-top:16px;">
+      ¿No esperabas esta invitación? Puedes ignorar este correo.
+    </p>
+  </div>
+</body>
+</html>"""
+
+
 def _render_otp_html(code: str, recipient: str = "", sandbox_for: str = "") -> str:
     sandbox_banner = ""
     if sandbox_for:

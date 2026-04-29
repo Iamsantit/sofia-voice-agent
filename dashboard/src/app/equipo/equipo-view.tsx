@@ -50,6 +50,10 @@ export function EquipoView() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Member["role"]>("editor");
   const [submitting, setSubmitting] = useState(false);
+  const [inviteToast, setInviteToast] = useState<{
+    text: string;
+    kind: "success" | "warn" | "error";
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,6 +89,25 @@ export function EquipoView() {
       });
       const data = await res.json();
       if (data.status === "ok") {
+        const invite = data.invite ?? {};
+        const targetEmail = data.member?.email ?? email;
+        if (invite.sent && !invite.sandbox_redirect) {
+          setInviteToast({
+            text: `✓ Invitación enviada a ${targetEmail}`,
+            kind: "success",
+          });
+        } else if (invite.sent && invite.sandbox_redirect) {
+          setInviteToast({
+            text: `Invitación redirigida al owner (Resend en sandbox). Para enviar a usuarios reales, verifica tu dominio.`,
+            kind: "warn",
+          });
+        } else {
+          setInviteToast({
+            text: `Miembro guardado, pero el email no salió: ${invite.error ?? "desconocido"}. Compártele el acceso manualmente.`,
+            kind: "warn",
+          });
+        }
+        setTimeout(() => setInviteToast(null), 8000);
         setShowInvite(false);
         setName("");
         setEmail("");
@@ -302,9 +325,19 @@ export function EquipoView() {
         </CardContent>
       </Card>
 
-      <p className="text-[11px] text-neutral-500 text-center pt-2">
-        ⚠️ El envío automático de invitaciones por email está pendiente. Por ahora se guarda el miembro y le compartes manualmente el acceso.
-      </p>
+      {inviteToast && (
+        <div
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur-md ${
+            inviteToast.kind === "success"
+              ? "border-emerald-500/40 bg-emerald-500/[0.08] text-emerald-100"
+              : inviteToast.kind === "warn"
+                ? "border-amber-500/40 bg-amber-500/[0.08] text-amber-100"
+                : "border-red-500/40 bg-red-500/[0.08] text-red-100"
+          }`}
+        >
+          {inviteToast.text}
+        </div>
+      )}
     </div>
   );
 }
