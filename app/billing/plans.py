@@ -40,11 +40,14 @@ class Plan:
     monthly_price_usd: int
     annual_price_usd: int
     minutes_included: float           # per period
-    max_agents: int
+    max_agents: int                   # voice agents
     max_phone_numbers: int
+    max_whatsapp_agents: int          # WhatsApp chatbot agents
+    voice_tier: str                   # "basic" | "premium" | "custom"
     integrations: tuple[str, ...]     # whitelist of integration keys
     can_clone_voice: bool
     has_priority_support: bool
+    has_team_chat: bool               # internal team messaging
     # Trial: if > 0, the plan auto-locks after this many days from signup.
     # Used to gate the Basic/Starter plan to a 14-day free trial.
     trial_days: int = 0
@@ -59,37 +62,44 @@ PLANS: dict[PlanKey, Plan] = {
         minutes_included=50,
         max_agents=1,
         max_phone_numbers=1,
+        max_whatsapp_agents=0,
+        voice_tier="basic",
         integrations=("custom-webhook",),
         can_clone_voice=False,
         has_priority_support=False,
+        has_team_chat=False,
         trial_days=14,
     ),
     "pro": Plan(
         key="pro",
         name="Pro",
-        monthly_price_usd=99,
-        annual_price_usd=79 * 12,  # $948/yr, 20% off vs monthly
-        minutes_included=1500,
-        max_agents=3,
-        max_phone_numbers=2,
+        monthly_price_usd=15,
+        annual_price_usd=12 * 12,  # $144/yr, 20% off vs monthly
+        minutes_included=200,
+        max_agents=1,
+        max_phone_numbers=1,
+        max_whatsapp_agents=1,
+        voice_tier="basic",       # only free voices (Cartesia + basic Retell)
         integrations=(
             "custom-webhook",
             "google-calendar",
             "whatsapp",
             "zapier",
-            "make",
         ),
         can_clone_voice=False,
-        has_priority_support=True,
+        has_priority_support=False,
+        has_team_chat=False,
     ),
     "plus": Plan(
         key="plus",
-        name="Plus",
-        monthly_price_usd=299,
-        annual_price_usd=249 * 12,  # $2,988/yr, ~17% off vs monthly
-        minutes_included=UNLIMITED,
-        max_agents=15,
-        max_phone_numbers=10,
+        name="Max",
+        monthly_price_usd=79,
+        annual_price_usd=65 * 12,  # $780/yr, 18% off vs monthly
+        minutes_included=1500,
+        max_agents=10,
+        max_phone_numbers=3,
+        max_whatsapp_agents=5,
+        voice_tier="premium",     # + ElevenLabs premium voices
         integrations=(
             "custom-webhook",
             "google-calendar",
@@ -101,8 +111,9 @@ PLANS: dict[PlanKey, Plan] = {
             "zapier",
             "make",
         ),
-        can_clone_voice=True,
+        can_clone_voice=True,     # voice cloning unlocked
         has_priority_support=True,
+        has_team_chat=True,       # team chat unlocked
     ),
 }
 
@@ -181,6 +192,70 @@ def get_plan(email: str) -> Plan:
     return PLANS.get(rec.get("plan", DEFAULT_PLAN), PLANS[DEFAULT_PLAN])
 
 
+# ── Custom plan calculator (annual, configurable) ──────────────────────────
+
+
+# Pricing knobs for the user-configurable annual plan. Tuned so a
+# 1500-min / 10-voice / 3-number / 5-WA config sits near the Max ($79)
+# price point as a sanity reference.
+CUSTOM_BASE_PRICE_USD = 25.0          # monthly base fee
+CUSTOM_PRICE_PER_MIN = 0.03           # per included voice minute
+CUSTOM_PRICE_PER_AGENT = 3.0          # per voice agent slot
+CUSTOM_PRICE_PER_NUMBER = 3.0         # per phone number
+CUSTOM_PRICE_PER_WHATSAPP = 4.0       # per WhatsApp agent slot
+CUSTOM_VOICE_CLONE_ADDON = 15.0       # voice cloning add-on (monthly)
+CUSTOM_ANNUAL_DISCOUNT = 0.20         # 20% off vs monthly when paid annually
+
+CUSTOM_LIMITS = {
+    "min_minutes": 200,    "max_minutes": 10000,
+    "min_agents": 1,       "max_agents": 30,
+    "min_numbers": 1,      "max_numbers": 20,
+    "min_whatsapp": 0,     "max_whatsapp": 20,
+}
+
+
+def compute_custom_plan_price(
+    minutes: int,
+    agents: int,
+    numbers: int,
+    whatsapp_agents: int = 0,
+    voice_clone: bool = False,
+) -> dict:
+    """Quote for a user-configured annual plan. All limits are clamped to
+    the published min/max so the UI sliders always produce valid plans."""
+    L = CUSTOM_LIMITS
+    minutes = max(L["min_minutes"], min(int(minutes or 0), L["max_minutes"]))
+    agents = max(L["min_agents"], min(int(agents or 0), L["max_agents"]))
+    numbers = max(L["min_numbers"], min(int(numbers or 0), L["max_numbers"]))
+    whatsapp_agents = max(
+        L["min_whatsapp"], min(int(whatsapp_agents or 0), L["max_whatsapp"])
+    )
+
+    monthly = (
+        CUSTOM_BASE_PRICE_USD
+        + minutes * CUSTOM_PRICE_PER_MIN
+        + agents * CUSTOM_PRICE_PER_AGENT
+        + numbers * CUSTOM_PRICE_PER_NUMBER
+        + whatsapp_agents * CUSTOM_PRICE_PER_WHATSAPP
+        + (CUSTOM_VOICE_CLONE_ADDON if voice_clone else 0.0)
+    )
+    annual_total = monthly * 12 * (1 - CUSTOM_ANNUAL_DISCOUNT)
+    annual_per_month = annual_total / 12
+    return {
+        "minutes": minutes,
+        "agents": agents,
+        "numbers": numbers,
+        "whatsapp_agents": whatsapp_agents,
+        "voice_clone": bool(voice_clone),
+        "monthly_price_usd": round(monthly, 2),
+        "annual_per_month_usd": round(annual_per_month, 2),
+        "annual_total_usd": round(annual_total, 2),
+        "annual_savings_usd": round(monthly * 12 * CUSTOM_ANNUAL_DISCOUNT, 2),
+        "annual_discount_pct": int(CUSTOM_ANNUAL_DISCOUNT * 100),
+        "limits": L,
+    }
+
+
 # ── Trial helpers ───────────────────────────────────────────────────────────
 
 
@@ -233,6 +308,30 @@ def trial_status(email: str) -> dict:
     }
 
 
+def _serialize_plan(plan: Plan) -> dict:
+    """Single source of truth for how a Plan goes over the wire.
+    All new fields must be added here so /billing/me and /billing/plans
+    stay in sync."""
+    is_unlimited = plan.minutes_included == UNLIMITED
+    return {
+        "key": plan.key,
+        "name": plan.name,
+        "monthly_price_usd": plan.monthly_price_usd,
+        "annual_price_usd": plan.annual_price_usd,
+        "minutes_included": None if is_unlimited else plan.minutes_included,
+        "is_unlimited": is_unlimited,
+        "max_agents": plan.max_agents,
+        "max_phone_numbers": plan.max_phone_numbers,
+        "max_whatsapp_agents": plan.max_whatsapp_agents,
+        "voice_tier": plan.voice_tier,
+        "integrations": list(plan.integrations),
+        "can_clone_voice": plan.can_clone_voice,
+        "has_priority_support": plan.has_priority_support,
+        "has_team_chat": plan.has_team_chat,
+        "trial_days": plan.trial_days,
+    }
+
+
 def get_usage(email: str) -> dict:
     """Compact view used by the dashboard."""
     rec = get_record(email)
@@ -242,20 +341,7 @@ def get_usage(email: str) -> dict:
     pct = 0 if is_unlimited else min(100, round(100 * used / max(plan.minutes_included, 1)))
     return {
         "email": rec["email"],
-        "plan": {
-            "key": plan.key,
-            "name": plan.name,
-            "monthly_price_usd": plan.monthly_price_usd,
-            "annual_price_usd": plan.annual_price_usd,
-            "minutes_included": None if is_unlimited else plan.minutes_included,
-            "is_unlimited": is_unlimited,
-            "max_agents": plan.max_agents,
-            "max_phone_numbers": plan.max_phone_numbers,
-            "integrations": list(plan.integrations),
-            "can_clone_voice": plan.can_clone_voice,
-            "has_priority_support": plan.has_priority_support,
-            "trial_days": plan.trial_days,
-        },
+        "plan": _serialize_plan(plan),
         "usage": {
             "minutes_used": round(used, 2),
             "minutes_pct": pct,

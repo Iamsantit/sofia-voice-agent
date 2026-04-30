@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Pricing } from "@/components/landing/pricing";
+import { CustomPlanBuilder } from "@/components/landing/custom-plan-builder";
 import { FAQ } from "@/components/landing/faq";
 import { Stats } from "@/components/landing/stats";
 import { HowItWorks } from "@/components/landing/how-it-works";
@@ -314,6 +315,11 @@ export default function LandingPage() {
       {/* Pricing con toggle */}
       <Reveal>
         <Pricing />
+      </Reveal>
+
+      {/* Plan ajustable (Max → Ajustar uso) */}
+      <Reveal>
+        <CustomPlanBuilder />
       </Reveal>
 
       {/* FAQ */}

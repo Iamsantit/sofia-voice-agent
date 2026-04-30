@@ -586,31 +586,34 @@ def admin_billing_change_plan(request: Request, body: dict = Body(...)):
     return {"status": "ok", "plan": rec["plan"]}
 
 
+# ── Custom annual plan (user-configured) ──────────────────────────────────
+
+
+@web_app.post("/billing/quote-custom")
+def billing_quote_custom(body: dict = Body(...)):
+    """Public quote endpoint (no auth) so the landing page can show
+    live pricing while the user moves the sliders."""
+    from app.billing.plans import compute_custom_plan_price
+    return {
+        "status": "ok",
+        **compute_custom_plan_price(
+            minutes=body.get("minutes", 1500),
+            agents=body.get("agents", 5),
+            numbers=body.get("numbers", 3),
+            whatsapp_agents=body.get("whatsapp_agents", 0),
+            voice_clone=bool(body.get("voice_clone", False)),
+        ),
+    }
+
+
 @web_app.get("/admin/billing/plans")
 def admin_billing_plans():
     """Public plan catalog used by the upgrade page / pricing comparison."""
-    from app.billing import PLANS
+    from app.billing import PLANS, serialize_plan
 
     return {
         "status": "ok",
-        "plans": [
-            {
-                "key": p.key,
-                "name": p.name,
-                "monthly_price_usd": p.monthly_price_usd,
-                "annual_price_usd": p.annual_price_usd,
-                "minutes_included": (
-                    None if p.minutes_included == float("inf") else p.minutes_included
-                ),
-                "is_unlimited": p.minutes_included == float("inf"),
-                "max_agents": p.max_agents,
-                "max_phone_numbers": p.max_phone_numbers,
-                "integrations": list(p.integrations),
-                "can_clone_voice": p.can_clone_voice,
-                "has_priority_support": p.has_priority_support,
-            }
-            for p in PLANS.values()
-        ],
+        "plans": [serialize_plan(p) for p in PLANS.values()],
     }
 
 

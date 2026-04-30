@@ -13,6 +13,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/",
   "/api/industries",
   "/api/onboarding",
+  "/api/billing/quote-custom",
 ];
 
 function isPublic(pathname: string): boolean {

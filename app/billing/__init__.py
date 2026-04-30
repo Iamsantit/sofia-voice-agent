@@ -5,12 +5,14 @@ from app.billing.plans import (
     PLANS,
     Plan,
     PlanKey,
+    _serialize_plan,
     add_minutes_used,
     can_buy_phone_number,
     can_clone_voice,
     can_create_agent,
     can_use_integration,
     can_use_minutes,
+    compute_custom_plan_price,
     get_plan,
     get_record,
     get_usage,
@@ -19,6 +21,9 @@ from app.billing.plans import (
     trial_remaining_seconds,
     trial_status,
 )
+
+# Public alias (drops the leading underscore for external imports)
+serialize_plan = _serialize_plan
 
 __all__ = [
     "DEFAULT_PLAN",
@@ -31,10 +36,12 @@ __all__ = [
     "can_create_agent",
     "can_use_integration",
     "can_use_minutes",
+    "compute_custom_plan_price",
     "get_plan",
     "get_record",
     "get_usage",
     "is_trial_expired",
+    "serialize_plan",
     "set_plan",
     "trial_remaining_seconds",
     "trial_status",
