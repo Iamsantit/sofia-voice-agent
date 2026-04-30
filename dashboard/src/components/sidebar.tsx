@@ -33,6 +33,7 @@ const nav: NavItem[] = [
   { href: "/knowledge", label: "Knowledge", icon: "📚" },
   { href: "/integraciones", label: "Integraciones", icon: "🔌" },
   { href: "/equipo", label: "Equipo", icon: "👨‍👩‍👧" },
+  { href: "/mensajes", label: "Mensajes", icon: "💬" },
 
   // Cuenta
   { section: "Cuenta", href: "/facturacion", label: "Facturación", icon: "💳" },

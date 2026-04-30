@@ -59,11 +59,13 @@ export function Pricing() {
             ctaSubtitle="Sin compromiso · Cancela en cualquier momento"
             featuresHeading="Todo lo del trial Starter, y:"
             features={[
-              "150 minutos/mes (~2.5 horas)",
-              "1 agente de voz personalizado",
-              "1 número telefónico",
-              "WhatsApp + Google Calendar + Zapier",
-              "Análisis de sentimiento en cada llamada",
+              "200 minutos de voz al mes",
+              "1 agente de voz",
+              "1 agente de WhatsApp",
+              "1 número telefónico (voz + WhatsApp)",
+              "Voces básicas en español latam",
+              "Google Calendar + Zapier",
+              "Análisis de sentimiento por llamada",
               "Soporte por email",
             ]}
           />
@@ -81,12 +83,14 @@ export function Pricing() {
             ctaSubtitle="Sin compromiso · Cancela en cualquier momento"
             featuresHeading="Todo lo de Pro, más:"
             features={[
-              "Hasta 60× más uso que Pro (10K minutos)",
-              "Recomendado para negocios serios",
-              "Hasta 30 agentes de voz en paralelo",
-              "Hasta 20 números telefónicos",
-              "Todas las integraciones (HubSpot, Pipedrive, Salesforce, Zoho, Zapier, Make)",
+              "1,500 minutos de voz al mes (~25 horas)",
+              "10 agentes de voz",
+              "5 agentes de WhatsApp",
+              "3 números telefónicos",
+              "Voces premium (ElevenLabs) en 10+ acentos",
               "Clonación de voz personalizada",
+              "Todas las integraciones (HubSpot, Pipedrive, Salesforce, Zoho, Zapier, Make)",
+              "Chat de equipo interno tipo WhatsApp 💬",
               "Soporte prioritario 24/7 con SLA",
             ]}
             highlight

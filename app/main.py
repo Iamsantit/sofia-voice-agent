@@ -586,6 +586,74 @@ def admin_billing_change_plan(request: Request, body: dict = Body(...)):
     return {"status": "ok", "plan": rec["plan"]}
 
 
+# ── Team chat (Max plan only) ──────────────────────────────────────────────
+
+
+def _require_team_chat_plan(email: str) -> tuple[bool, str]:
+    """True if the user's plan unlocks team chat. Returns (allowed, reason)."""
+    try:
+        from app.billing import get_plan
+        plan = get_plan(email)
+        if not plan.has_team_chat:
+            return False, (
+                f"El chat de equipo está disponible solo en planes con esta "
+                f"función. Tu plan actual es {plan.name}. Sube a Max para "
+                f"activarlo."
+            )
+        return True, ""
+    except Exception as e:
+        return False, str(e)[:200]
+
+
+@web_app.get("/admin/team-chat")
+def admin_team_chat_list(request: Request):
+    from app.admin.team_chat import list_messages, resolve_owner_for
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+
+    allowed, reason = _require_team_chat_plan(email)
+    if not allowed:
+        return {"status": "error", "code": "plan_locked", "message": reason}
+
+    owner = resolve_owner_for(email)
+    return {"status": "ok", "messages": list_messages(owner)}
+
+
+@web_app.post("/admin/team-chat")
+def admin_team_chat_send(request: Request, body: dict = Body(...)):
+    from app.admin.team_chat import resolve_owner_for, send_message
+    from app.user_agents import get_user_agent
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+
+    allowed, reason = _require_team_chat_plan(email)
+    if not allowed:
+        return {"status": "error", "code": "plan_locked", "message": reason}
+
+    text = (body.get("text") or "").strip()
+    if not text:
+        return {"status": "error", "message": "Mensaje vacío"}
+
+    sender_name = ""
+    try:
+        link = get_user_agent(email)
+        if link:
+            sender_name = link.get("agent_name") or ""
+    except Exception:
+        pass
+
+    owner = resolve_owner_for(email)
+    try:
+        msg = send_message(owner, email, sender_name, text)
+        return {"status": "ok", "message": msg}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+
+
 # ── Custom annual plan (user-configured) ──────────────────────────────────
 
 

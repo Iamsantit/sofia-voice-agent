@@ -13,6 +13,9 @@ type PlanInfo = {
   is_unlimited: boolean;
   max_agents: number;
   max_phone_numbers: number;
+  max_whatsapp_agents?: number;
+  voice_tier?: "basic" | "premium" | "custom";
+  has_team_chat?: boolean;
   integrations: string[];
   can_clone_voice: boolean;
   has_priority_support: boolean;
@@ -209,7 +212,7 @@ export function FacturacionView() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <UsageBlock
                 label="Minutos este periodo"
                 used={me.usage.minutes_used}
@@ -219,7 +222,7 @@ export function FacturacionView() {
                 unlimited={me.plan.is_unlimited}
               />
               <UsageBlock
-                label="Agentes permitidos"
+                label="Agentes de voz"
                 used={null}
                 total={me.plan.max_agents}
                 pct={0}
@@ -227,13 +230,57 @@ export function FacturacionView() {
                 hideBar
               />
               <UsageBlock
-                label="Números permitidos"
+                label="Agentes de WhatsApp"
+                used={null}
+                total={me.plan.max_whatsapp_agents ?? 0}
+                pct={0}
+                unit=""
+                hideBar
+              />
+              <UsageBlock
+                label="Números telefónicos"
                 used={null}
                 total={me.plan.max_phone_numbers}
                 pct={0}
                 unit=""
                 hideBar
               />
+              <div className="rounded-lg bg-black/20 border border-white/[0.04] p-4">
+                <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1.5">
+                  Voces disponibles
+                </p>
+                <p className="text-sm font-mono text-neutral-100 mb-1">
+                  <span className="text-2xl font-heading font-bold italic mr-1">
+                    {me.plan.voice_tier === "premium"
+                      ? "Premium"
+                      : me.plan.voice_tier === "custom"
+                        ? "Custom"
+                        : "Básicas"}
+                  </span>
+                </p>
+                <p className="text-[10px] text-neutral-500 leading-snug">
+                  {me.plan.voice_tier === "premium"
+                    ? "ElevenLabs + Cartesia, 10+ acentos"
+                    : me.plan.voice_tier === "custom"
+                      ? "Premium + clonación de tu propia voz"
+                      : "Cartesia base en español latam"}
+                </p>
+              </div>
+              <div className="rounded-lg bg-black/20 border border-white/[0.04] p-4">
+                <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1.5">
+                  Chat de equipo
+                </p>
+                <p className="text-sm font-mono text-neutral-100 mb-1">
+                  <span className="text-2xl font-heading font-bold italic mr-1">
+                    {me.plan.has_team_chat ? "✓" : "—"}
+                  </span>
+                </p>
+                <p className="text-[10px] text-neutral-500 leading-snug">
+                  {me.plan.has_team_chat
+                    ? "Mensajería interna entre miembros"
+                    : "No incluido en este plan"}
+                </p>
+              </div>
             </div>
 
             <p className="text-[11px] text-neutral-500 mt-4">
@@ -317,20 +364,34 @@ export function FacturacionView() {
                   <Feat>
                     {p.is_unlimited
                       ? "Minutos ilimitados"
-                      : `${p.minutes_included} minutos / mes`}
+                      : `${p.minutes_included} minutos voz / mes`}
                   </Feat>
                   <Feat>
-                    {p.max_agents} agente{p.max_agents === 1 ? "" : "s"}
+                    {p.max_agents} agente{p.max_agents === 1 ? "" : "s"} de voz
                   </Feat>
+                  {(p.max_whatsapp_agents ?? 0) > 0 && (
+                    <Feat>
+                      {p.max_whatsapp_agents} agente
+                      {p.max_whatsapp_agents === 1 ? "" : "s"} WhatsApp 💬
+                    </Feat>
+                  )}
                   <Feat>
                     {p.max_phone_numbers} número
                     {p.max_phone_numbers === 1 ? "" : "s"} telefónico
                     {p.max_phone_numbers === 1 ? "" : "s"}
                   </Feat>
                   <Feat>
+                    {p.voice_tier === "premium"
+                      ? "Voces premium (ElevenLabs)"
+                      : p.voice_tier === "custom"
+                        ? "Voces premium + clonación"
+                        : "Voces básicas"}
+                  </Feat>
+                  <Feat>
                     {p.integrations.length} integraciones
                   </Feat>
                   {p.can_clone_voice && <Feat>Clonación de voz</Feat>}
+                  {p.has_team_chat && <Feat>Chat de equipo interno</Feat>}
                   {p.has_priority_support && <Feat>Soporte prioritario</Feat>}
                 </ul>
 

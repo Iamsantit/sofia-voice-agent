@@ -58,12 +58,32 @@ export function EquipoView() {
   } | null>(null);
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
 
+  function inviteUrl(token: string) {
+    return `${window.location.origin}/registro?invite=${token}`;
+  }
+
   function copyInviteLink(token: string, memberId: string) {
-    const url = `${window.location.origin}/registro?invite=${token}`;
-    navigator.clipboard.writeText(url).then(() => {
+    navigator.clipboard.writeText(inviteUrl(token)).then(() => {
       setCopiedTokenId(memberId);
       setTimeout(() => setCopiedTokenId(null), 2500);
     });
+  }
+
+  function shareViaWhatsApp(token: string, memberName: string) {
+    const url = inviteUrl(token);
+    const text = encodeURIComponent(
+      `Hola ${memberName} 👋 Te invito a colaborar en SofiaAI. Acepta tu invitación aquí: ${url}`,
+    );
+    window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
+  }
+
+  function shareViaEmail(token: string, memberName: string, memberEmail: string) {
+    const url = inviteUrl(token);
+    const subject = encodeURIComponent("Te invité a SofiaAI");
+    const body = encodeURIComponent(
+      `Hola ${memberName},\n\nTe invité a colaborar en SofiaAI. Acepta tu invitación aquí:\n\n${url}\n\nCualquier duda, respóndeme este correo.`,
+    );
+    window.location.href = `mailto:${memberEmail}?subject=${subject}&body=${body}`;
   }
 
   const load = useCallback(async () => {
@@ -310,18 +330,38 @@ export function EquipoView() {
                   </div>
 
                   {m.status === "invited" && m.invite_token && (
-                    <button
-                      type="button"
-                      onClick={() => copyInviteLink(m.invite_token!, m.id)}
-                      className={`shrink-0 rounded-md border px-3 py-1.5 text-xs transition ${
-                        copiedTokenId === m.id
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                          : "border-amber-500/30 bg-amber-500/[0.08] text-amber-300 hover:bg-amber-500/[0.15]"
-                      }`}
-                      title="Copia el link y mándalo por WhatsApp/SMS al invitado"
-                    >
-                      {copiedTokenId === m.id ? "✓ Copiado" : "📋 Copiar link"}
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => shareViaWhatsApp(m.invite_token!, m.name)}
+                        title="Compartir por WhatsApp"
+                        className="rounded-md border border-emerald-500/30 bg-emerald-500/[0.06] hover:bg-emerald-500/[0.12] text-emerald-300 px-2.5 py-1.5 text-xs transition"
+                      >
+                        💬
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          shareViaEmail(m.invite_token!, m.name, m.email)
+                        }
+                        title="Enviar por correo"
+                        className="rounded-md border border-blue-500/30 bg-blue-500/[0.06] hover:bg-blue-500/[0.12] text-blue-300 px-2.5 py-1.5 text-xs transition"
+                      >
+                        ✉
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => copyInviteLink(m.invite_token!, m.id)}
+                        title="Copiar link"
+                        className={`rounded-md border px-2.5 py-1.5 text-xs transition ${
+                          copiedTokenId === m.id
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                            : "border-amber-500/30 bg-amber-500/[0.08] text-amber-300 hover:bg-amber-500/[0.15]"
+                        }`}
+                      >
+                        {copiedTokenId === m.id ? "✓" : "🔗"}
+                      </button>
+                    </div>
                   )}
 
                   {m.role !== "owner" ? (

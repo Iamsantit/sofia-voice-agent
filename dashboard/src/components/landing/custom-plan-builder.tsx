@@ -7,6 +7,7 @@ type Quote = {
   minutes: number;
   agents: number;
   numbers: number;
+  whatsapp_agents: number;
   voice_clone: boolean;
   monthly_price_usd: number;
   annual_per_month_usd: number;
@@ -15,17 +16,27 @@ type Quote = {
   annual_discount_pct: number;
 };
 
-const PRESETS = [
-  { label: "Pequeño negocio", minutes: 500, agents: 2, numbers: 1, voice_clone: false },
-  { label: "PyME en crecimiento", minutes: 1500, agents: 5, numbers: 3, voice_clone: false },
-  { label: "Operación seria", minutes: 4000, agents: 12, numbers: 6, voice_clone: true },
-  { label: "Escala enterprise", minutes: 10000, agents: 30, numbers: 20, voice_clone: true },
+type Preset = {
+  label: string;
+  minutes: number;
+  agents: number;
+  numbers: number;
+  whatsapp: number;
+  voice_clone: boolean;
+};
+
+const PRESETS: Preset[] = [
+  { label: "Pequeño negocio", minutes: 500, agents: 2, numbers: 1, whatsapp: 1, voice_clone: false },
+  { label: "PyME en crecimiento", minutes: 1500, agents: 5, numbers: 3, whatsapp: 3, voice_clone: false },
+  { label: "Operación seria", minutes: 4000, agents: 12, numbers: 6, whatsapp: 8, voice_clone: true },
+  { label: "Escala enterprise", minutes: 10000, agents: 30, numbers: 20, whatsapp: 20, voice_clone: true },
 ];
 
 export function CustomPlanBuilder() {
   const [minutes, setMinutes] = useState(1500);
   const [agents, setAgents] = useState(5);
   const [numbers, setNumbers] = useState(3);
+  const [whatsapp, setWhatsapp] = useState(3);
   const [voiceClone, setVoiceClone] = useState(false);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [billingMode, setBillingMode] = useState<"annual" | "monthly">("annual");
@@ -40,6 +51,7 @@ export function CustomPlanBuilder() {
           minutes,
           agents,
           numbers,
+          whatsapp_agents: whatsapp,
           voice_clone: voiceClone,
         }),
       })
@@ -50,12 +62,13 @@ export function CustomPlanBuilder() {
         .catch(() => {});
     }, 200);
     return () => clearTimeout(t);
-  }, [minutes, agents, numbers, voiceClone]);
+  }, [minutes, agents, numbers, whatsapp, voiceClone]);
 
-  function applyPreset(p: (typeof PRESETS)[number]) {
+  function applyPreset(p: Preset) {
     setMinutes(p.minutes);
     setAgents(p.agents);
     setNumbers(p.numbers);
+    setWhatsapp(p.whatsapp);
     setVoiceClone(p.voice_clone);
   }
 
@@ -138,6 +151,16 @@ export function CustomPlanBuilder() {
               hint="Diferentes ciudades / países / verticales"
               onChange={setNumbers}
             />
+            <SliderRow
+              label="Agentes de WhatsApp 💬"
+              value={whatsapp}
+              min={0}
+              max={20}
+              step={1}
+              format={(v) => `${v} ${v === 1 ? "agente" : "agentes"}`}
+              hint="Chatbot 24/7 en WhatsApp Business"
+              onChange={setWhatsapp}
+            />
 
             <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] p-3">
               <input
@@ -213,11 +236,11 @@ export function CustomPlanBuilder() {
 
             <div className="rounded-lg bg-black/20 border border-white/[0.04] p-4 space-y-2 text-xs">
               <Row
-                label="Minutos"
+                label="Minutos voz"
                 value={`${quote?.minutes.toLocaleString() ?? minutes.toLocaleString()} / mes`}
               />
               <Row
-                label="Agentes"
+                label="Agentes voz"
                 value={String(quote?.agents ?? agents)}
               />
               <Row
@@ -225,15 +248,20 @@ export function CustomPlanBuilder() {
                 value={String(quote?.numbers ?? numbers)}
               />
               <Row
+                label="Agentes WhatsApp"
+                value={String(quote?.whatsapp_agents ?? whatsapp)}
+              />
+              <Row
                 label="Voz custom"
                 value={voiceClone ? "Incluido" : "—"}
               />
               <Row label="Soporte" value="24/7 prioritario" />
               <Row label="Integraciones" value="Todas" />
+              <Row label="Chat de equipo" value="Incluido" />
             </div>
 
             <Link
-              href={`/registro?plan=custom&minutes=${minutes}&agents=${agents}&numbers=${numbers}&voice=${voiceClone ? 1 : 0}&billing=${billingMode}`}
+              href={`/registro?plan=custom&minutes=${minutes}&agents=${agents}&numbers=${numbers}&whatsapp=${whatsapp}&voice=${voiceClone ? 1 : 0}&billing=${billingMode}`}
               className="block w-full text-center rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-medium py-3 text-sm transition"
             >
               Empezar con este plan →

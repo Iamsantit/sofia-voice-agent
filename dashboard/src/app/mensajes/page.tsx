@@ -1,18 +1,20 @@
 import { Shell } from "@/components/shell";
-import { AgentesTabs } from "./agentes-tabs";
+import { TeamChatView } from "./team-chat-view";
 
-export default function AgentesPage() {
+export const dynamic = "force-dynamic";
+
+export default function MensajesPage() {
   return (
     <Shell>
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="font-heading text-5xl font-bold italic tracking-tight">
-          Agentes
+          Mensajes
         </h1>
         <p className="mt-2 text-base text-neutral-500">
-          Crea, edita y administra tus agentes de voz y WhatsApp
+          Chat interno entre los miembros de tu equipo
         </p>
       </div>
-      <AgentesTabs />
+      <TeamChatView />
     </Shell>
   );
 }
