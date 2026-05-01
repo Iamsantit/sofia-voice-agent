@@ -48,6 +48,10 @@ class Plan:
     can_clone_voice: bool
     has_priority_support: bool
     has_team_chat: bool               # internal team messaging
+    # Stripe Payment Link for monthly checkout (set per environment).
+    # When empty, the dashboard falls back to direct in-DB plan switching.
+    stripe_link_monthly: str = ""
+    stripe_link_annual: str = ""
     # Trial: if > 0, the plan auto-locks after this many days from signup.
     # Used to gate the Basic/Starter plan to a 14-day free trial.
     trial_days: int = 0
@@ -57,9 +61,9 @@ PLANS: dict[PlanKey, Plan] = {
     "basic": Plan(
         key="basic",
         name="Starter",
-        monthly_price_usd=0,
-        annual_price_usd=0,
-        minutes_included=50,
+        monthly_price_usd=20,
+        annual_price_usd=17 * 12,  # $204/yr, 15% off vs monthly
+        minutes_included=100,
         max_agents=1,
         max_phone_numbers=1,
         max_whatsapp_agents=0,
@@ -68,38 +72,41 @@ PLANS: dict[PlanKey, Plan] = {
         can_clone_voice=False,
         has_priority_support=False,
         has_team_chat=False,
+        stripe_link_monthly="https://buy.stripe.com/9B63cx5BS4ncfkl6P5f7i07",
         trial_days=14,
     ),
     "pro": Plan(
         key="pro",
         name="Pro",
-        monthly_price_usd=15,
-        annual_price_usd=12 * 12,  # $144/yr, 20% off vs monthly
-        minutes_included=200,
-        max_agents=1,
-        max_phone_numbers=1,
-        max_whatsapp_agents=1,
-        voice_tier="basic",       # only free voices (Cartesia + basic Retell)
+        monthly_price_usd=100,
+        annual_price_usd=85 * 12,  # $1,020/yr, 15% off vs monthly
+        minutes_included=2000,
+        max_agents=3,
+        max_phone_numbers=2,
+        max_whatsapp_agents=2,
+        voice_tier="premium",     # ElevenLabs voices unlocked at Pro
         integrations=(
             "custom-webhook",
             "google-calendar",
             "whatsapp",
             "zapier",
+            "make",
         ),
         can_clone_voice=False,
-        has_priority_support=False,
+        has_priority_support=True,
         has_team_chat=False,
+        stripe_link_monthly="https://buy.stripe.com/fZueVf0hy9Hw1tv5L1f7i08",
     ),
     "plus": Plan(
         key="plus",
         name="Max",
-        monthly_price_usd=79,
-        annual_price_usd=65 * 12,  # $780/yr, 18% off vs monthly
-        minutes_included=1500,
-        max_agents=10,
-        max_phone_numbers=3,
-        max_whatsapp_agents=5,
-        voice_tier="premium",     # + ElevenLabs premium voices
+        monthly_price_usd=200,
+        annual_price_usd=170 * 12,  # $2,040/yr, 15% off vs monthly
+        minutes_included=UNLIMITED,
+        max_agents=15,
+        max_phone_numbers=5,
+        max_whatsapp_agents=10,
+        voice_tier="custom",      # premium + voice cloning
         integrations=(
             "custom-webhook",
             "google-calendar",
@@ -111,9 +118,10 @@ PLANS: dict[PlanKey, Plan] = {
             "zapier",
             "make",
         ),
-        can_clone_voice=True,     # voice cloning unlocked
+        can_clone_voice=True,
         has_priority_support=True,
-        has_team_chat=True,       # team chat unlocked
+        has_team_chat=True,
+        stripe_link_monthly="https://buy.stripe.com/8x2eVfaWcg5U5JLehxf7i06",
     ),
 }
 
@@ -328,6 +336,8 @@ def _serialize_plan(plan: Plan) -> dict:
         "can_clone_voice": plan.can_clone_voice,
         "has_priority_support": plan.has_priority_support,
         "has_team_chat": plan.has_team_chat,
+        "stripe_link_monthly": plan.stripe_link_monthly,
+        "stripe_link_annual": plan.stripe_link_annual,
         "trial_days": plan.trial_days,
     }
 

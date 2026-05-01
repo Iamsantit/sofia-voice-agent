@@ -72,16 +72,16 @@ export function EquipoView() {
   function shareViaWhatsApp(token: string, memberName: string) {
     const url = inviteUrl(token);
     const text = encodeURIComponent(
-      `Hola ${memberName} 👋 Te invito a colaborar en SofiaAI. Acepta tu invitación aquí: ${url}`,
+      `Hola ${memberName} 👋 Te invito a colaborar en Quantixa AI. Acepta tu invitación aquí: ${url}`,
     );
     window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
   }
 
   function shareViaEmail(token: string, memberName: string, memberEmail: string) {
     const url = inviteUrl(token);
-    const subject = encodeURIComponent("Te invité a SofiaAI");
+    const subject = encodeURIComponent("Te invité a Quantixa AI");
     const body = encodeURIComponent(
-      `Hola ${memberName},\n\nTe invité a colaborar en SofiaAI. Acepta tu invitación aquí:\n\n${url}\n\nCualquier duda, respóndeme este correo.`,
+      `Hola ${memberName},\n\nTe invité a colaborar en Quantixa AI. Acepta tu invitación aquí:\n\n${url}\n\nCualquier duda, respóndeme este correo.`,
     );
     window.location.href = `mailto:${memberEmail}?subject=${subject}&body=${body}`;
   }

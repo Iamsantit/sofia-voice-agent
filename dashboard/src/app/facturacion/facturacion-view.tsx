@@ -19,6 +19,8 @@ type PlanInfo = {
   integrations: string[];
   can_clone_voice: boolean;
   has_priority_support: boolean;
+  stripe_link_monthly?: string;
+  stripe_link_annual?: string;
 };
 
 type Me = {
@@ -52,6 +54,7 @@ export function FacturacionView() {
   const [loading, setLoading] = useState(true);
   const [changing, setChanging] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [billingMode, setBillingMode] = useState<"monthly" | "annual">("annual");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,15 +76,30 @@ export function FacturacionView() {
     load();
   }, [load]);
 
-  async function changePlan(key: string) {
-    if (!confirm(`¿Cambiar al plan ${key.toUpperCase()}?`)) return;
-    setChanging(key);
+  async function changePlan(p: PlanInfo) {
+    // If the plan has a Stripe Payment Link, redirect there for real
+    // checkout. Otherwise (e.g. enterprise / no link configured) fall
+    // back to the in-DB switch for staff overrides.
+    const stripeUrl =
+      billingMode === "annual"
+        ? p.stripe_link_annual || p.stripe_link_monthly
+        : p.stripe_link_monthly;
+
+    if (stripeUrl) {
+      window.open(stripeUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const cycle = billingMode === "annual" ? "anual" : "mensual";
+    if (!confirm(`¿Cambiar al plan ${p.key.toUpperCase()} con cobro ${cycle}?`))
+      return;
+    setChanging(p.key);
     setError(null);
     try {
       const res = await fetch("/api/billing/change-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: key }),
+        body: JSON.stringify({ plan: p.key, billing_cycle: billingMode }),
       });
       const data = await res.json();
       if (data.status === "ok") {
@@ -297,18 +315,73 @@ export function FacturacionView() {
 
       {/* Plan selector */}
       <section>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
           <h2 className="text-xs uppercase tracking-wider text-neutral-500">
             Cambiar de plan
           </h2>
-          <p className="text-[11px] text-neutral-500">
-            El cambio aplica al instante
-          </p>
+          <div className="flex items-center gap-3">
+            {/* Billing toggle — same vibe as the landing */}
+            <div className="inline-flex rounded-full border border-white/[0.08] bg-white/[0.03] p-0.5 text-[11px]">
+              <button
+                onClick={() => setBillingMode("monthly")}
+                className={`px-3 py-1 rounded-full transition ${
+                  billingMode === "monthly"
+                    ? "bg-white/[0.08] text-neutral-100"
+                    : "text-neutral-500 hover:text-neutral-300"
+                }`}
+              >
+                Mensual
+              </button>
+              <button
+                onClick={() => setBillingMode("annual")}
+                className={`px-3 py-1 rounded-full transition flex items-center gap-1.5 ${
+                  billingMode === "annual"
+                    ? "bg-white/[0.08] text-neutral-100"
+                    : "text-neutral-500 hover:text-neutral-300"
+                }`}
+              >
+                Anual
+                <span className="text-[9px] text-emerald-400 font-medium">
+                  Ahorra ~20%
+                </span>
+              </button>
+            </div>
+            <p className="text-[11px] text-neutral-500">
+              El cambio aplica al instante
+            </p>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {plans.map((p) => {
             const active = p.key === currentPlanKey;
             const featured = p.key === "pro";
+
+            // Choose the right price for the selected billing mode.
+            // monthly_price_usd is the raw monthly. annual_price_usd is
+            // the YEARLY total (already multiplied by 12), so to display
+            // a per-month price for the annual plan we divide by 12.
+            const annualPerMonth =
+              p.annual_price_usd > 0
+                ? Math.round((p.annual_price_usd / 12) * 100) / 100
+                : 0;
+            const displayPrice =
+              billingMode === "annual" ? annualPerMonth : p.monthly_price_usd;
+            const monthlyEquivalent =
+              p.monthly_price_usd > 0 && annualPerMonth > 0
+                ? Math.max(
+                    0,
+                    Math.round(
+                      ((p.monthly_price_usd - annualPerMonth) /
+                        p.monthly_price_usd) *
+                        100,
+                    ),
+                  )
+                : 0;
+            const annualSavings =
+              p.monthly_price_usd > 0 && p.annual_price_usd > 0
+                ? p.monthly_price_usd * 12 - p.annual_price_usd
+                : 0;
+
             return (
               <div
                 key={p.key}
@@ -343,19 +416,31 @@ export function FacturacionView() {
                 </div>
 
                 <div className="mb-4">
-                  {p.monthly_price_usd === 0 ? (
+                  {p.monthly_price_usd === 0 && p.annual_price_usd === 0 ? (
                     <p className="font-heading text-3xl font-bold italic">
                       Gratis
                     </p>
                   ) : (
-                    <div className="flex items-baseline gap-1">
-                      <span className="font-heading text-3xl font-bold italic">
-                        ${p.monthly_price_usd}
-                      </span>
-                      <span className="text-xs text-neutral-500">/mes</span>
-                    </div>
+                    <>
+                      <div className="flex items-baseline gap-1">
+                        <span className="font-heading text-3xl font-bold italic">
+                          ${displayPrice}
+                        </span>
+                        <span className="text-xs text-neutral-500">/mes</span>
+                      </div>
+                      <p className="text-[10px] text-neutral-500 mt-0.5">
+                        {billingMode === "annual"
+                          ? `Facturado anualmente — $${p.annual_price_usd}/año`
+                          : "Facturado mensualmente"}
+                      </p>
+                      {billingMode === "annual" && monthlyEquivalent > 0 && (
+                        <p className="text-[10px] text-emerald-400 mt-0.5">
+                          Ahorras ${annualSavings}/año ({monthlyEquivalent}% off)
+                        </p>
+                      )}
+                    </>
                   )}
-                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                  <p className="text-[11px] text-neutral-500 mt-1">
                     {PLAN_BLURBS[p.key]}
                   </p>
                 </div>
@@ -396,7 +481,7 @@ export function FacturacionView() {
                 </ul>
 
                 <Button
-                  onClick={() => changePlan(p.key)}
+                  onClick={() => changePlan(p)}
                   disabled={active || changing === p.key}
                   className={`w-full ${
                     active

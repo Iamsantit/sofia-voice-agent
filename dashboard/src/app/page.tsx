@@ -5,6 +5,7 @@ import { FAQ } from "@/components/landing/faq";
 import { Stats } from "@/components/landing/stats";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { Reveal } from "@/components/fx/reveal";
+import { QuantixaMark } from "@/components/quantixa-logo";
 
 const INDUSTRIES = [
   { icon: "🏠", label: "Inmobiliaria" },
@@ -60,7 +61,7 @@ const TESTIMONIALS = [
   },
   {
     quote:
-      "Sofia agenda visitas a propiedades sola. El equipo de ventas ahora solo recibe leads ya filtrados — el cierre subió 30%.",
+      "Quantixa AI agenda visitas a propiedades sola. El equipo de ventas ahora solo recibe leads ya filtrados — el cierre subió 30%.",
     author: "Carlos V.",
     role: "Director Comercial, Inmobiliaria",
     initial: "C",
@@ -81,11 +82,9 @@ export default function LandingPage() {
       <header className="sticky top-0 z-30 border-b border-white/[0.06] glass">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400 text-base font-bold text-black">
-              S
-            </div>
+            <QuantixaMark size={36} />
             <p className="font-heading text-xl font-bold italic tracking-tight">
-              Sofia<span className="text-amber-400">AI</span>
+              Quantixa<span className="text-amber-400">AI</span>
             </p>
           </Link>
           <nav className="hidden md:flex items-center gap-6 text-sm">
@@ -154,7 +153,7 @@ export default function LandingPage() {
               <span className="text-aurora">nunca duerme.</span>
             </h1>
             <p className="mt-6 text-lg text-neutral-400 max-w-2xl">
-              Sofia contesta tus llamadas, califica leads, agenda citas y
+              Quantixa AI contesta tus llamadas, califica leads, agenda citas y
               actualiza tu CRM — todo con inteligencia artificial. Sin
               empleados, sin guardias, sin drama.
             </p>
@@ -212,7 +211,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 py-24">
           <div className="max-w-2xl mb-12">
             <h2 className="font-heading text-4xl md:text-5xl font-bold italic tracking-tight">
-              Qué hace Sofia
+              Qué hace Quantixa AI
             </h2>
             <p className="mt-3 text-neutral-400">
               No es un chatbot. Es una recepcionista con voz natural, contexto
@@ -266,7 +265,7 @@ export default function LandingPage() {
             ))}
           </div>
           <p className="text-center text-xs text-neutral-500 mt-8">
-            ¿Otro negocio? También funciona — el template genérico adapta Sofia
+            ¿Otro negocio? También funciona — el template genérico adapta Quantixa
             a tu caso con un prompt redactado por Claude.
           </p>
         </div>
@@ -333,7 +332,7 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(251,191,36,0.08),transparent_60%)]" />
         <div className="max-w-4xl mx-auto px-6 py-24 text-center relative">
           <h2 className="font-heading text-4xl md:text-6xl font-bold italic tracking-tight">
-            3 minutos y Sofia
+            3 minutos y Quantixa
             <br />
             <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
               empieza a trabajar.
@@ -354,7 +353,7 @@ export default function LandingPage() {
               href="/llamada-prueba"
               className="rounded-lg border border-white/[0.1] px-8 py-4 text-sm text-neutral-300 hover:bg-white/[0.04] transition"
             >
-              📞 Hablar con Sofia primero
+              📞 Hablar con Quantixa primero
             </Link>
           </div>
         </div>
@@ -368,16 +367,14 @@ export default function LandingPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
             <div className="col-span-2">
               <div className="flex items-center gap-3 mb-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400 text-sm font-bold text-black">
-                  S
-                </div>
+                <QuantixaMark size={32} />
                 <p className="font-heading text-lg font-bold italic tracking-tight">
-                  Sofia<span className="text-amber-400">AI</span>
+                  Quantixa<span className="text-amber-400">AI</span>
                 </p>
               </div>
               <p className="text-sm text-neutral-400 max-w-md">
-                Agentes de voz IA para negocios que no quieren perder ni una
-                llamada.
+                Agentes de voz y WhatsApp con IA para negocios que no
+                quieren perder ni una llamada.
               </p>
             </div>
             <div>
@@ -434,7 +431,7 @@ export default function LandingPage() {
                 </li>
                 <li>
                   <a
-                    href="mailto:hola@sofia.ai"
+                    href="mailto:hola@quantixa.ai"
                     className="text-neutral-400 hover:text-neutral-100"
                   >
                     Contacto
@@ -444,7 +441,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="pt-8 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-4 text-xs text-neutral-500">
-            <p>© {new Date().getFullYear()} SofiaAI. Todos los derechos reservados.</p>
+            <p>© {new Date().getFullYear()} Quantixa AI. Todos los derechos reservados.</p>
             <p>Powered by Retell · Claude · Twilio</p>
           </div>
         </div>

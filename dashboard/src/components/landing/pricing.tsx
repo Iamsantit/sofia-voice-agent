@@ -5,7 +5,13 @@ import { useState } from "react";
 
 type BillingMode = "monthly" | "annual";
 
-const ANNUAL_DISCOUNT_PCT = 15; // Pro saves 15% on annual ($17 vs $20)
+const ANNUAL_DISCOUNT_PCT = 15; // 15% off annual on all paid plans
+
+const STRIPE_LINKS = {
+  starter: "https://buy.stripe.com/9B63cx5BS4ncfkl6P5f7i07",
+  pro: "https://buy.stripe.com/fZueVf0hy9Hw1tv5L1f7i08",
+  max: "https://buy.stripe.com/8x2eVfaWcg5U5JLehxf7i06",
+};
 
 export function Pricing() {
   const [billing, setBilling] = useState<BillingMode>("annual");
@@ -36,12 +42,17 @@ export function Pricing() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-5 items-stretch">
-          {/* ── Pro card ── */}
+        {/* Top toggle controls all 3 cards */}
+        <div className="flex justify-center mb-8">
+          <BillingToggle billing={billing} onChange={setBilling} />
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-5 items-stretch">
+          {/* ── Starter card ── */}
           <PlanCard
-            icon={<IconPro />}
-            name="Pro"
-            tagline="Para empezar a vender con IA"
+            icon={<IconStarter />}
+            name="Starter"
+            tagline="Para empezar a probar"
             priceLine={
               billing === "annual" ? (
                 <PriceLine amount={17} sub="facturado anualmente" />
@@ -49,52 +60,97 @@ export function Pricing() {
                 <PriceLine amount={20} sub="facturado mensualmente" />
               )
             }
-            topRight={
-              <BillingToggle billing={billing} onChange={setBilling} />
+            cta={{
+              label: "Empezar Starter",
+              href: STRIPE_LINKS.starter,
+              external: true,
+            }}
+            ctaSubtitle="14 días gratis · Sin tarjeta para empezar"
+            featuresHeading="Incluye:"
+            features={[
+              "100 minutos de voz al mes",
+              "1 agente de voz",
+              "1 número telefónico",
+              "Voces básicas en español latam",
+              "Calificación automática de leads",
+              "Análisis con Claude 4.5",
+              "Soporte por email",
+            ]}
+          />
+
+          {/* ── Pro card (highlighted) ── */}
+          <PlanCard
+            icon={<IconPro />}
+            name="Pro"
+            tagline="Para negocios que ya facturan"
+            priceLine={
+              billing === "annual" ? (
+                <PriceLine amount={85} sub="facturado anualmente" />
+              ) : (
+                <PriceLine amount={100} sub="facturado mensualmente" />
+              )
             }
             cta={{
               label: "Cambiar a Pro",
-              href: `/registro?plan=pro&billing=${billing}`,
+              href: STRIPE_LINKS.pro,
+              external: true,
             }}
-            ctaSubtitle="Sin compromiso · Cancela en cualquier momento"
-            featuresHeading="Todo lo del trial Starter, y:"
+            ctaSubtitle="Sin compromiso · Cancela cuando quieras"
+            featuresHeading="Todo lo de Starter, más:"
             features={[
-              "200 minutos de voz al mes",
-              "1 agente de voz",
-              "1 agente de WhatsApp",
-              "1 número telefónico (voz + WhatsApp)",
-              "Voces básicas en español latam",
-              "Google Calendar + Zapier",
-              "Análisis de sentimiento por llamada",
-              "Soporte por email",
+              "2,000 minutos de voz al mes (~33 horas)",
+              "3 agentes de voz",
+              "2 agentes de WhatsApp 💬",
+              "2 números telefónicos",
+              "Voces premium (ElevenLabs) en 10+ acentos",
+              "WhatsApp + Calendar + Zapier + Make",
+              "Análisis de sentimiento + transcripciones",
+              "Soporte prioritario",
             ]}
+            highlight
           />
 
           {/* ── Max card ── */}
           <PlanCard
             icon={<IconMax />}
             name="Max"
-            tagline="Límites más altos, acceso prioritario"
-            priceLine={<PriceLine amount={100} prefix="Desde " sub="USD / mes facturado mensualmente" />}
+            tagline="Reemplaza a un equipo completo"
+            priceLine={
+              billing === "annual" ? (
+                <PriceLine amount={170} sub="facturado anualmente" />
+              ) : (
+                <PriceLine amount={200} sub="facturado mensualmente" />
+              )
+            }
             cta={{
-              label: "Ajustar uso",
-              onClick: scrollToBuilder,
+              label: "Cambiar a Max",
+              href: STRIPE_LINKS.max,
+              external: true,
             }}
-            ctaSubtitle="Sin compromiso · Cancela en cualquier momento"
+            ctaSubtitle="Sin compromiso · Cancela cuando quieras"
             featuresHeading="Todo lo de Pro, más:"
             features={[
-              "1,500 minutos de voz al mes (~25 horas)",
-              "10 agentes de voz",
-              "5 agentes de WhatsApp",
-              "3 números telefónicos",
-              "Voces premium (ElevenLabs) en 10+ acentos",
+              "Minutos ilimitados ✨",
+              "15 agentes de voz",
+              "10 agentes de WhatsApp 💬",
+              "5 números telefónicos",
               "Clonación de voz personalizada",
-              "Todas las integraciones (HubSpot, Pipedrive, Salesforce, Zoho, Zapier, Make)",
-              "Chat de equipo interno tipo WhatsApp 💬",
-              "Soporte prioritario 24/7 con SLA",
+              "Todas las integraciones (HubSpot, Pipedrive, Salesforce, Zoho)",
+              "Chat de equipo interno tipo WhatsApp",
+              "Equipo ilimitado con roles",
+              "Soporte 24/7 con SLA <1h",
             ]}
-            highlight
           />
+        </div>
+
+        {/* Custom builder CTA */}
+        <div className="text-center mt-6">
+          <button
+            onClick={scrollToBuilder}
+            className="text-sm text-amber-400 hover:text-amber-300 underline underline-offset-2"
+          >
+            ¿Necesitas algo intermedio? Arma tu plan custom abajo →
+          </button>
         </div>
 
         {/* Enterprise nudge below */}
@@ -133,7 +189,12 @@ function PlanCard({
   tagline: string;
   priceLine: React.ReactNode;
   topRight?: React.ReactNode;
-  cta: { label: string; href?: string; onClick?: () => void };
+  cta: {
+    label: string;
+    href?: string;
+    onClick?: () => void;
+    external?: boolean;
+  };
   ctaSubtitle?: string;
   featuresHeading: string;
   features: string[];
@@ -168,16 +229,31 @@ function PlanCard({
 
       {/* CTA */}
       {cta.href ? (
-        <Link
-          href={cta.href}
-          className={`w-full text-center rounded-xl py-3 text-sm font-semibold transition ${
-            highlight
-              ? "bg-amber-400 text-black hover:bg-amber-300"
-              : "bg-neutral-100 text-black hover:bg-white"
-          }`}
-        >
-          {cta.label}
-        </Link>
+        cta.external ? (
+          <a
+            href={cta.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`w-full text-center rounded-xl py-3 text-sm font-semibold transition block ${
+              highlight
+                ? "bg-amber-400 text-black hover:bg-amber-300"
+                : "bg-neutral-100 text-black hover:bg-white"
+            }`}
+          >
+            {cta.label}
+          </a>
+        ) : (
+          <Link
+            href={cta.href}
+            className={`w-full text-center rounded-xl py-3 text-sm font-semibold transition block ${
+              highlight
+                ? "bg-amber-400 text-black hover:bg-amber-300"
+                : "bg-neutral-100 text-black hover:bg-white"
+            }`}
+          >
+            {cta.label}
+          </Link>
+        )
       ) : (
         <button
           onClick={cta.onClick}
@@ -276,6 +352,24 @@ function BillingToggle({
         </span>
       </button>
     </div>
+  );
+}
+
+function IconStarter() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-7 w-7 text-amber-300"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="8" r="3" />
+      <path d="M12 11v8" />
+      <circle cx="12" cy="20" r="1.5" />
+    </svg>
   );
 }
 

@@ -9,7 +9,7 @@ export default function IntegracionesPage() {
           Integraciones
         </h1>
         <p className="mt-2 text-base text-neutral-500">
-          Conecta SofiaAI con tus herramientas
+          Conecta Quantixa AI con tus herramientas
         </p>
       </div>
       <IntegracionesView />

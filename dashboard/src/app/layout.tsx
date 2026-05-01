@@ -16,9 +16,9 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "SofiaAI — Agentes de voz IA",
+  title: "Quantixa AI — Agentes de voz y WhatsApp con IA",
   description:
-    "Sofia contesta tus llamadas, califica leads, agenda citas y actualiza tu CRM con inteligencia artificial.",
+    "Quantixa AI contesta tus llamadas, automatiza WhatsApp, califica leads y agenda citas con inteligencia artificial. 14 días gratis.",
 };
 
 export default function RootLayout({

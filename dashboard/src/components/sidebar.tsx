@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { QuantixaMark } from "@/components/quantixa-logo";
 
 // ⬇️ Cambia aquí el nombre del producto cuando quieras ⬇️
-const PRODUCT_NAME = "SofiaAI";
-const PRODUCT_INITIAL = "S";
+const PRODUCT_NAME = "Quantixa AI";
 // ⬆️━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ⬆️
 
 type NavItem = {
@@ -127,12 +127,9 @@ export function Sidebar() {
         href="/dashboard"
         className="flex h-16 items-center gap-3 px-5 border-b border-white/[0.06] hover:bg-white/[0.04] transition"
       >
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400 text-base font-bold text-black">
-          {PRODUCT_INITIAL}
-        </div>
+        <QuantixaMark size={36} />
         <p className="font-heading text-xl font-bold italic tracking-tight">
-          {PRODUCT_NAME.replace("AI", "")}
-          <span className="text-amber-400">AI</span>
+          Quantixa<span className="text-amber-400">AI</span>
         </p>
       </Link>
 
