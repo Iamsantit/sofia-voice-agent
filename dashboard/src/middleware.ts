@@ -14,13 +14,19 @@ const PUBLIC_API_PATHS = [
   "/api/industries",
   "/api/onboarding",
   "/api/billing/quote-custom",
+  "/api/public/",
+  "/api/embed.js",
 ];
+
+// Pages that don't need a session
+const PUBLIC_PAGE_PREFIXES = ["/embed/"];
 
 function isPublic(pathname: string): boolean {
   if (pathname.startsWith("/_next")) return true;
   if (pathname.startsWith("/favicon")) return true;
   if (pathname.startsWith("/api/auth/")) return true;
   if (PUBLIC_API_PATHS.some((p) => pathname.startsWith(p))) return true;
+  if (PUBLIC_PAGE_PREFIXES.some((p) => pathname.startsWith(p))) return true;
   if (PUBLIC_PATHS.includes(pathname)) return true;
   return false;
 }

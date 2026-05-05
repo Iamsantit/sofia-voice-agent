@@ -26,10 +26,10 @@ const INDUSTRY_MAP: Record<
     label: "Inmobiliaria",
     icon: "🏠",
     actions: [
-      { icon: "🏘️", label: "Propiedades", desc: "Cargar inventario al CRM", href: "/leads", soon: true },
-      { icon: "👥", label: "Leads", desc: "Prospectos calificados por Sofía", href: "/leads" },
+      { icon: "🏘️", label: "Propiedades", desc: "Catálogo en knowledge", href: "/knowledge" },
+      { icon: "👥", label: "Leads", desc: "Prospectos calificados", href: "/leads" },
       { icon: "📅", label: "Visitas agendadas", desc: "Citas con clientes", href: "/llamadas" },
-      { icon: "🎯", label: "Llamar prospectos", desc: "Disparar outbound con IA", href: "/llamada-prueba" },
+      { icon: "🎯", label: "Llamar prospectos", desc: "Outbound con IA", href: "/llamada-prueba" },
     ],
   },
   dental: {
@@ -38,8 +38,8 @@ const INDUSTRY_MAP: Record<
     actions: [
       { icon: "📅", label: "Citas de hoy", desc: "Agenda del día", href: "/llamadas" },
       { icon: "👥", label: "Pacientes", desc: "Base de datos", href: "/leads" },
-      { icon: "💉", label: "Tratamientos", desc: "Catálogo de servicios", soon: true },
-      { icon: "🚨", label: "Urgencias", desc: "Citas prioritarias del día", soon: true },
+      { icon: "💉", label: "Tratamientos", desc: "Catálogo en knowledge", href: "/knowledge" },
+      { icon: "🚨", label: "Urgencias en vivo", desc: "Llamadas activas ahora", href: "/live-monitor" },
     ],
   },
   gimnasio: {
@@ -48,8 +48,8 @@ const INDUSTRY_MAP: Record<
     actions: [
       { icon: "🎟️", label: "Pruebas gratis", desc: "Leads convertibles", href: "/leads" },
       { icon: "📊", label: "Conversión", desc: "Prueba → membresía", href: "/dashboard" },
-      { icon: "📋", label: "Planes vendidos", desc: "Membresías activas", soon: true },
-      { icon: "🎯", label: "Llamar leads", desc: "Seguimiento con Sofía", href: "/llamada-prueba" },
+      { icon: "📋", label: "Planes vendidos", desc: "Catálogo en knowledge", href: "/knowledge" },
+      { icon: "🎯", label: "Llamar leads", desc: "Seguimiento outbound", href: "/llamada-prueba" },
     ],
   },
   restaurante: {
@@ -57,8 +57,8 @@ const INDUSTRY_MAP: Record<
     icon: "🍽️",
     actions: [
       { icon: "📅", label: "Reservas hoy", desc: "Mesas confirmadas", href: "/llamadas" },
-      { icon: "🎉", label: "Eventos especiales", desc: "Cumpleaños, aniversarios", soon: true },
-      { icon: "📋", label: "Menú", desc: "Especialidades del día", soon: true },
+      { icon: "🎉", label: "Eventos especiales", desc: "Catálogo en knowledge", href: "/knowledge" },
+      { icon: "📋", label: "Menú", desc: "Especialidades del día", href: "/knowledge" },
       { icon: "👥", label: "Clientes frecuentes", desc: "Base de datos", href: "/leads" },
     ],
   },
@@ -67,9 +67,9 @@ const INDUSTRY_MAP: Record<
     icon: "🏥",
     actions: [
       { icon: "📅", label: "Agenda médica", desc: "Citas por especialidad", href: "/llamadas" },
-      { icon: "👨‍⚕️", label: "Especialidades", desc: "Doctores y áreas", soon: true },
+      { icon: "👨‍⚕️", label: "Especialidades", desc: "Doctores en knowledge", href: "/knowledge" },
       { icon: "👥", label: "Pacientes", desc: "Registros activos", href: "/leads" },
-      { icon: "🚨", label: "Urgencias", desc: "Canalizar derivaciones", soon: true },
+      { icon: "🚨", label: "Urgencias en vivo", desc: "Llamadas activas ahora", href: "/live-monitor" },
     ],
   },
   abogados: {
@@ -77,9 +77,9 @@ const INDUSTRY_MAP: Record<
     icon: "⚖️",
     actions: [
       { icon: "📋", label: "Consultas pendientes", desc: "Casos por asignar", href: "/leads" },
-      { icon: "⚖️", label: "Áreas de práctica", desc: "Civil, penal, familiar…", soon: true },
+      { icon: "⚖️", label: "Áreas de práctica", desc: "En knowledge base", href: "/knowledge" },
       { icon: "📅", label: "Asesorías agendadas", desc: "Citas iniciales", href: "/llamadas" },
-      { icon: "📁", label: "Casos activos", desc: "En seguimiento", soon: true },
+      { icon: "📁", label: "Casos activos", desc: "Seguimiento en CRM", href: "/leads" },
     ],
   },
   "salon-belleza": {
@@ -87,8 +87,8 @@ const INDUSTRY_MAP: Record<
     icon: "💇",
     actions: [
       { icon: "📅", label: "Citas de hoy", desc: "Agenda del día", href: "/llamadas" },
-      { icon: "✂️", label: "Servicios", desc: "Corte, color, uñas…", soon: true },
-      { icon: "👩‍🎨", label: "Estilistas", desc: "Disponibilidad", soon: true },
+      { icon: "✂️", label: "Servicios", desc: "Catálogo en knowledge", href: "/knowledge" },
+      { icon: "👩‍🎨", label: "Estilistas", desc: "Equipo y disponibilidad", href: "/equipo" },
       { icon: "👥", label: "Clientas frecuentes", desc: "Base de datos", href: "/leads" },
     ],
   },

@@ -586,6 +586,132 @@ def admin_billing_change_plan(request: Request, body: dict = Body(...)):
     return {"status": "ok", "plan": rec["plan"]}
 
 
+# ── Public lead-capture form (embeddable on any website) ──────────────────
+
+
+@web_app.post("/public/lead")
+def public_lead(request: Request, body: dict = Body(...)):
+    """Public endpoint hit by the embeddable widget on any website.
+
+    Body: {
+      agent_id: str (required — identifies the receiving account),
+      name: str,
+      phone?: str,
+      email?: str,
+      message?: str,
+      source_url?: str,
+    }
+
+    Rate-limited per IP (30/hour). On success we:
+      1. Look up the owner of the agent_id
+      2. Persist the submission for the dashboard
+      3. Try to create a Notion lead (best-effort)
+      4. Send WhatsApp notification to the owner (best-effort)
+    Returns: {status: "ok"} or {status: "error", message}
+    """
+    from app.admin.form_submissions import check_rate_limit, submit
+    from app.user_agents import get_user_agent_by_agent_id
+
+    # Rate limit by client IP. Behind Vercel/Modal headers may differ.
+    ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or request.headers.get("x-real-ip", "")
+        or (request.client.host if request.client else "")
+    )
+    allowed, _remaining = check_rate_limit(ip)
+    if not allowed:
+        return {
+            "status": "error",
+            "message": "Demasiadas solicitudes desde tu IP. Intenta en 1 hora.",
+        }
+
+    agent_id = (body.get("agent_id") or "").strip()
+    name = (body.get("name") or "").strip()
+    phone = (body.get("phone") or "").strip()
+    email = (body.get("email") or "").strip().lower()
+    message = (body.get("message") or "").strip()
+    source_url = (body.get("source_url") or "").strip()
+
+    if not agent_id:
+        return {"status": "error", "message": "Falta agent_id"}
+    if len(name) < 2:
+        return {"status": "error", "message": "Escribe tu nombre"}
+    if not phone and not email:
+        return {"status": "error", "message": "Necesitamos al menos teléfono o email"}
+
+    # Resolve owner from agent_id
+    owner_email = ""
+    try:
+        link = get_user_agent_by_agent_id(agent_id)
+        if link:
+            owner_email = link.get("email", "")
+    except Exception:
+        pass
+
+    sub = submit(
+        agent_id=agent_id,
+        owner_email=owner_email,
+        name=name,
+        phone=phone,
+        email=email,
+        message=message,
+        source_url=source_url,
+        ip=ip,
+    )
+
+    # Best-effort: persist as Notion lead so the existing dashboard
+    # tools can pick it up
+    try:
+        from app.services import notion_service
+        notion_service.create_lead(
+            name=name,
+            phone=phone or "",
+            email=email or "",
+            fuente=f"Formulario web ({source_url[:80]})" if source_url else "Formulario web",
+            notas=message[:500] if message else "Submission desde formulario embebido",
+        )
+    except Exception as ne:
+        log.warn(
+            Phase.SYSTEM,
+            "form.notion_create.fail",
+            data={"reason": str(ne)[:200]},
+        )
+
+    # Best-effort: notify owner via WhatsApp if subscribed
+    try:
+        if owner_email:
+            from app.admin.whatsapp import notify_owner
+            notify_owner(
+                owner_email=owner_email,
+                title="🆕 Nuevo lead desde formulario",
+                body=(
+                    f"{name}"
+                    + (f" · {phone}" if phone else "")
+                    + (f" · {email}" if email else "")
+                    + (f"\n\n{message[:200]}" if message else "")
+                ),
+            )
+    except Exception:
+        pass  # WhatsApp module may not have notify_owner — don't fail
+
+    return {"status": "ok", "id": sub["id"]}
+
+
+@web_app.get("/admin/form-submissions")
+def admin_form_submissions(request: Request):
+    """List recent form submissions for the authenticated owner."""
+    from app.admin.form_submissions import count_per_day, list_for_owner
+
+    email = _email_from_request(request)
+    if not email:
+        return {"status": "unauthenticated"}
+    return {
+        "status": "ok",
+        "submissions": list_for_owner(email, limit=50),
+        "per_day": count_per_day(email, days=7),
+    }
+
+
 # ── Team chat (Max plan only) ──────────────────────────────────────────────
 
 
