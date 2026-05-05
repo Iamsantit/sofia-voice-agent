@@ -113,9 +113,17 @@ export function TestCallForm() {
         setCurrentLocalPhase("call.04_twilio_route");
         startPolling(data.call_id);
       } else {
+        // Plan limit hit (out of minutes / trial expired) → friendly
+        // upsell message instead of generic error.
+        let message = data.message ?? "Error desconocido";
+        if (data.code === "plan_limit" || data.stage === "plan_limit") {
+          message =
+            (data.message ?? "Te quedaste sin minutos en este plan.") +
+            "  →  Sube a Pro o Max en /facturacion para seguir llamando.";
+        }
         setResult({
           ok: false,
-          message: data.message ?? "Error desconocido",
+          message,
           stage: data.stage,
         });
         setCurrentLocalPhase("call.xx_failed");

@@ -170,6 +170,11 @@ export function CreateAgentDialog({
       const data = await res.json();
       if (data.status === "ok") {
         onCreated();
+      } else if (data.code === "plan_limit") {
+        setError(
+          (data.message ?? "Llegaste al límite de agentes en tu plan.") +
+            "  →  Sube de plan en /facturacion para crear más.",
+        );
       } else {
         setError(data.message ?? "No se pudo crear el agente");
       }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -49,11 +50,13 @@ const PLAN_BLURBS: Record<string, string> = {
 };
 
 export function FacturacionView() {
+  const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [plans, setPlans] = useState<PlanInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [changing, setChanging] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [billingMode, setBillingMode] = useState<"monthly" | "annual">("annual");
 
   const load = useCallback(async () => {
@@ -77,36 +80,58 @@ export function FacturacionView() {
   }, [load]);
 
   async function changePlan(p: PlanInfo) {
-    // If the plan has a Stripe Payment Link, redirect there for real
-    // checkout. Otherwise (e.g. enterprise / no link configured) fall
-    // back to the in-DB switch for staff overrides.
+    if (changing) return;
+    setChanging(p.key);
+    setError(null);
+    setSuccessMsg(null);
+
+    const cycle = billingMode === "annual" ? "anual" : "mensual";
     const stripeUrl =
       billingMode === "annual"
         ? p.stripe_link_annual || p.stripe_link_monthly
         : p.stripe_link_monthly;
 
-    if (stripeUrl) {
-      window.open(stripeUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-
-    const cycle = billingMode === "annual" ? "anual" : "mensual";
-    if (!confirm(`¿Cambiar al plan ${p.key.toUpperCase()} con cobro ${cycle}?`))
-      return;
-    setChanging(p.key);
-    setError(null);
     try {
+      // 1) Apply the plan optimistically in our DB so the user gets
+      //    immediate access. Stripe checkout still opens — if they
+      //    bail without paying we can revoke from admin later.
       const res = await fetch("/api/billing/change-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan: p.key, billing_cycle: billingMode }),
       });
       const data = await res.json();
-      if (data.status === "ok") {
-        await load();
-      } else {
+      if (data.status !== "ok") {
         setError(data.message ?? "No se pudo cambiar el plan");
+        setChanging(null);
+        return;
       }
+
+      // 2) Open Stripe Payment Link with client_reference_id=email so
+      //    a future webhook can match the payment to the user.
+      if (stripeUrl && me?.email) {
+        const params = new URLSearchParams({
+          client_reference_id: me.email,
+          prefilled_email: me.email,
+        });
+        const sep = stripeUrl.includes("?") ? "&" : "?";
+        window.open(
+          `${stripeUrl}${sep}${params.toString()}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+      }
+
+      // 3) Show confirmation and bounce to dashboard.
+      setSuccessMsg(
+        stripeUrl && me?.email
+          ? `Plan ${p.name} activado. Completa el pago en Stripe (${cycle}).`
+          : `Plan ${p.name} activado.`,
+      );
+      await load();
+      setTimeout(() => router.replace("/dashboard"), 1800);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error de red");
     } finally {
       setChanging(null);
     }
@@ -119,6 +144,15 @@ export function FacturacionView() {
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/[0.04] p-4 text-sm text-red-300">
           {error}
+        </div>
+      )}
+      {successMsg && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.04] p-4 text-sm text-emerald-200 flex items-center gap-3">
+          <span className="text-xl">✅</span>
+          <div className="flex-1">{successMsg}</div>
+          <span className="text-[11px] text-emerald-300/70">
+            Redirigiendo al dashboard…
+          </span>
         </div>
       )}
 
